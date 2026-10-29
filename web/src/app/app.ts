@@ -26,9 +26,9 @@ import { CurrentUser, DEMO_USERS } from './core/current-user';
         <span>StudyForge</span>
       </a>
       <span class="spacer"></span>
+      <span class="editing-label">Editing as</span>
       <mat-form-field appearance="outline" subscriptSizing="dynamic" class="user-picker">
-        <mat-label>Editing as</mat-label>
-        <mat-select [(ngModel)]="user.name">
+        <mat-select [(ngModel)]="user.name" aria-label="Editing as">
           @for (u of users; track u) {
             <mat-option [value]="u">{{ u }}</mat-option>
           }
@@ -57,9 +57,15 @@ import { CurrentUser, DEMO_USERS } from './core/current-user';
     .spacer {
       flex: 1;
     }
-    .user-picker {
-      width: 160px;
+    .editing-label {
       font-size: 14px;
+      color: var(--mat-sys-on-surface-variant);
+    }
+    .user-picker {
+      width: 130px;
+      font-size: 14px;
+      --mat-form-field-container-height: 40px;
+      --mat-form-field-container-vertical-padding: 8px;
     }
     .page {
       max-width: 1100px;
