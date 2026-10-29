@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "angular.ng-template",
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    "esbenp.prettier-vscode",
+    "ms-azuretools.vscode-docker"
+  ]
+}

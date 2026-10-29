@@ -1,0 +1,230 @@
+<a routerLink="/" class="back"><mat-icon aria-hidden="true">arrow_back</mat-icon> All studies</a>
+
+@if (loading()) {
+  <mat-progress-bar mode="indeterminate" />
+} @else if (notFound()) {
+  <p class="error" role="alert">This study doesn't exist.</p>
+} @else if (study(); as s) {
+  <header class="page-header">
+    <div>
+      <span class="acronym">{{ s.acronym || 'No acronym' }}</span>
+      <h1>{{ s.title }}</h1>
+      <p class="subtitle">{{ s.phase }} · {{ s.status | statusLabel }} · version {{ s.version }}</p>
+    </div>
+    <span
+      class="live live-{{ socket.status() }}"
+      role="status"
+      [matTooltip]="
+        socket.status() === 'live'
+          ? 'Changes by others appear automatically'
+          : 'Trying to reconnect…'
+      "
+    >
+      <span class="dot" aria-hidden="true"></span>
+      {{ socket.status() === 'live' ? 'Live' : 'Reconnecting…' }}
+    </span>
+  </header>
+
+  <mat-tab-group animationDuration="0ms">
+    <mat-tab label="Design">
+      <div class="tab-body">
+        <!-- Study details -->
+        <mat-card appearance="outlined">
+          <mat-card-header><mat-card-title>Study details</mat-card-title></mat-card-header>
+          <mat-card-content>
+            @if (staleWhileEditing()) {
+              <div class="stale-banner" role="alert">
+                <mat-icon aria-hidden="true">warning</mat-icon>
+                <span
+                  >Someone else saved this study while you were editing. Saving will show you the
+                  differences.</span
+                >
+                <button mat-button type="button" (click)="discardEdits()">Discard my edits</button>
+              </div>
+            }
+            <form
+              [formGroup]="details"
+              (ngSubmit)="saveDetails()"
+              id="details-form"
+              class="details-form"
+            >
+              <mat-form-field class="full">
+                <mat-label>Title</mat-label>
+                <input matInput formControlName="title" autocomplete="off" />
+                <mat-error>Title must be at least 3 characters</mat-error>
+              </mat-form-field>
+              <mat-form-field>
+                <mat-label>Acronym</mat-label>
+                <input matInput formControlName="acronym" autocomplete="off" />
+                @if (details.controls.acronym.pending) {
+                  <mat-hint>Checking availability…</mat-hint>
+                }
+                @if (details.controls.acronym.hasError('acronymTaken')) {
+                  <mat-error>Another study already uses this acronym</mat-error>
+                }
+              </mat-form-field>
+              <mat-form-field>
+                <mat-label>Phase</mat-label>
+                <mat-select formControlName="phase">
+                  @for (p of phases; track p) {
+                    <mat-option [value]="p">{{ p }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+              <mat-form-field>
+                <mat-label>Therapeutic area</mat-label>
+                <input matInput formControlName="therapeutic_area" autocomplete="off" />
+              </mat-form-field>
+              <mat-form-field>
+                <mat-label>Status</mat-label>
+                <mat-select formControlName="status">
+                  @for (st of statuses; track st) {
+                    <mat-option [value]="st">{{ st | statusLabel }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            </form>
+          </mat-card-content>
+          <mat-card-actions align="end">
+            <button mat-button type="button" [disabled]="details.pristine" (click)="discardEdits()">
+              Reset
+            </button>
+            <button
+              mat-flat-button
+              type="submit"
+              form="details-form"
+              [disabled]="details.pristine || details.invalid || details.pending || saving()"
+            >
+              Save details
+            </button>
+          </mat-card-actions>
+        </mat-card>
+
+        <!-- Arms -->
+        <section class="section" aria-labelledby="arms-heading">
+          <div class="section-header">
+            <h2 id="arms-heading">Arms</h2>
+            <button mat-stroked-button (click)="addArm()"><mat-icon>add</mat-icon> Add arm</button>
+          </div>
+          @if (s.arms.length === 0) {
+            <p class="empty">No arms yet.</p>
+          } @else {
+            <ul class="item-list">
+              @for (arm of s.arms; track arm.id) {
+                <li class="item">
+                  <div class="item-main">
+                    <div class="item-title">
+                      {{ arm.name }}
+                      <span class="tag">{{ arm.arm_type | statusLabel }}</span>
+                    </div>
+                    <div class="item-meta">
+                      @if (arm.dose) {
+                        <span>Dose: {{ arm.dose }}</span>
+                      }
+                      @if (arm.planned_size) {
+                        <span>Planned: {{ arm.planned_size }} participants</span>
+                      }
+                    </div>
+                    @if (arm.description) {
+                      <p class="item-desc">{{ arm.description }}</p>
+                    }
+                  </div>
+                  <div class="item-actions">
+                    <button
+                      mat-icon-button
+                      (click)="editArm(arm)"
+                      [attr.aria-label]="'Edit arm ' + arm.name"
+                      matTooltip="Edit"
+                    >
+                      <mat-icon>edit</mat-icon>
+                    </button>
+                    <button
+                      mat-icon-button
+                      (click)="deleteArm(arm)"
+                      [attr.aria-label]="'Delete arm ' + arm.name"
+                      matTooltip="Delete"
+                    >
+                      <mat-icon>delete</mat-icon>
+                    </button>
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+
+        <!-- Objectives -->
+        <section class="section" aria-labelledby="objectives-heading">
+          <div class="section-header">
+            <h2 id="objectives-heading">Objectives &amp; endpoints</h2>
+            <button mat-stroked-button (click)="addObjective()">
+              <mat-icon>add</mat-icon> Add objective
+            </button>
+          </div>
+          @if (s.objectives.length === 0) {
+            <p class="empty">No objectives yet.</p>
+          } @else {
+            <ul class="item-list">
+              @for (obj of s.objectives; track obj.id) {
+                <li class="item">
+                  <div class="item-main">
+                    <div class="item-title">
+                      <span class="tag">{{ obj.level | statusLabel }}</span>
+                      {{ obj.description }}
+                    </div>
+                    <p class="item-desc"><strong>Endpoint:</strong> {{ obj.endpoint }}</p>
+                  </div>
+                  <div class="item-actions">
+                    <button
+                      mat-icon-button
+                      (click)="editObjective(obj)"
+                      aria-label="Edit objective"
+                      matTooltip="Edit"
+                    >
+                      <mat-icon>edit</mat-icon>
+                    </button>
+                    <button
+                      mat-icon-button
+                      (click)="deleteObjective(obj)"
+                      aria-label="Delete objective"
+                      matTooltip="Delete"
+                    >
+                      <mat-icon>delete</mat-icon>
+                    </button>
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      </div>
+    </mat-tab>
+
+    <mat-tab label="Audit trail">
+      <div class="tab-body">
+        <p class="subtitle">
+          Every change is recorded with who made it, when, and the old and new values.
+        </p>
+        <ol class="audit-list">
+          @for (entry of audit(); track entry.id) {
+            <li class="audit-entry">
+              <div class="audit-head">
+                <strong>{{ entry.changed_by }}</strong>
+                <span>{{ entry.action }}d {{ entry.entity_type }} #{{ entry.entity_id }}</span>
+                <time class="audit-time">{{ entry.changed_at | date: 'MMM d, y, h:mm:ss a' }}</time>
+              </div>
+              <dl class="audit-changes">
+                @for (c of entry.changes | keyvalue; track c.key) {
+                  <dt>{{ label(c.key) }}</dt>
+                  <dd>{{ formatChange(c.value) }}</dd>
+                }
+              </dl>
+            </li>
+          } @empty {
+            <li class="empty">No changes recorded yet.</li>
+          }
+        </ol>
+      </div>
+    </mat-tab>
+  </mat-tab-group>
+}

@@ -1,0 +1,11 @@
+.dialog-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+  padding-top: 8px;
+  min-width: min(520px, 80vw);
+
+  .full {
+    grid-column: 1 / -1;
+  }
+}

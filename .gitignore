@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.db
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+
+# Env & editor
+.env
+.DS_Store
+.vscode/*
+!.vscode/extensions.json

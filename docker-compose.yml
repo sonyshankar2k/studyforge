@@ -1,0 +1,50 @@
+# One command starts everything:  docker compose up --build
+#   App:      http://localhost:8080
+#   API docs: http://localhost:8000/docs
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: studyforge
+      POSTGRES_PASSWORD: studyforge
+      POSTGRES_DB: studyforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studyforge"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Not used yet: background jobs (Week 2) will use it as the queue.
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://studyforge:studyforge@db:5432/studyforge
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: '["http://localhost:8080","http://localhost:4200"]'
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  web:
+    build: ./web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

@@ -1,0 +1,95 @@
+<header class="page-header">
+  <div>
+    <h1>Studies</h1>
+    <p class="subtitle">Design clinical study protocols together, in real time.</p>
+  </div>
+  @if (!showCreate()) {
+    <button mat-flat-button (click)="showCreate.set(true)">
+      <mat-icon>add</mat-icon> New study
+    </button>
+  }
+</header>
+
+@if (showCreate()) {
+  <mat-card appearance="outlined" class="create-card">
+    <mat-card-header><mat-card-title>New study</mat-card-title></mat-card-header>
+    <mat-card-content>
+      <form [formGroup]="form" (ngSubmit)="create()" class="create-form" id="create-study">
+        <mat-form-field class="full">
+          <mat-label>Title</mat-label>
+          <input matInput formControlName="title" autocomplete="off" />
+          @if (form.controls.title.hasError('required')) {
+            <mat-error>Title is required</mat-error>
+          } @else if (form.controls.title.hasError('minlength')) {
+            <mat-error>At least 3 characters</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field>
+          <mat-label>Acronym</mat-label>
+          <input matInput formControlName="acronym" autocomplete="off" />
+          @if (form.controls.acronym.pending) {
+            <mat-hint>Checking availability…</mat-hint>
+          }
+          @if (form.controls.acronym.hasError('acronymTaken')) {
+            <mat-error>Another study already uses this acronym</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field>
+          <mat-label>Phase</mat-label>
+          <mat-select formControlName="phase">
+            @for (p of phases; track p) {
+              <mat-option [value]="p">{{ p }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field>
+          <mat-label>Therapeutic area</mat-label>
+          <input matInput formControlName="therapeutic_area" autocomplete="off" />
+        </mat-form-field>
+      </form>
+    </mat-card-content>
+    <mat-card-actions align="end">
+      <button mat-button type="button" (click)="showCreate.set(false)">Cancel</button>
+      <button
+        mat-flat-button
+        type="submit"
+        form="create-study"
+        [disabled]="form.invalid || form.pending || saving()"
+      >
+        Create study
+      </button>
+    </mat-card-actions>
+  </mat-card>
+}
+
+@if (loading()) {
+  <mat-progress-bar mode="indeterminate" />
+} @else if (error()) {
+  <p class="error" role="alert">{{ error() }}</p>
+} @else if (studies().length === 0) {
+  <p class="empty">No studies yet. Create your first one.</p>
+} @else {
+  <ul class="study-grid">
+    @for (s of studies(); track s.id) {
+      <li>
+        <a [routerLink]="['/studies', s.id]" class="study-card">
+          <div class="card-top">
+            <span class="acronym">{{ s.acronym || 'No acronym' }}</span>
+            <span class="status status-{{ s.status }}">{{ s.status | statusLabel }}</span>
+          </div>
+          <h2>{{ s.title }}</h2>
+          <div class="meta">
+            <span>{{ s.phase }}</span>
+            @if (s.therapeutic_area) {
+              <span>· {{ s.therapeutic_area }}</span>
+            }
+            <span class="updated">Updated {{ s.updated_at | date: 'MMM d, h:mm a' }}</span>
+          </div>
+        </a>
+      </li>
+    }
+  </ul>
+}
