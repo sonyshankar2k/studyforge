@@ -1,6 +1,7 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { Observable } from 'rxjs';
 
+import { AuthService } from './auth';
 import { ChangeEvent } from './models';
 
 export type SocketStatus = 'connecting' | 'live' | 'reconnecting';
@@ -11,9 +12,12 @@ export type SocketStatus = 'connecting' | 'live' | 'reconnecting';
  * - Reconnects with exponential backoff (1s, 2s, 4s ... max 15s).
  * - Emits a synthetic `resync` after a reconnect, because events sent while
  *   we were offline are lost: the page must refetch to recover stale state.
+ * - Sends the JWT as `?token=` (browsers can't set headers on WebSockets).
+ *   If the server rejects it (close code 1008), sign out instead of retrying.
  */
 @Injectable({ providedIn: 'root' })
 export class StudySocket {
+  private readonly auth = inject(AuthService);
   readonly status = signal<SocketStatus>('connecting');
 
   watch(studyId: number): Observable<ChangeEvent | { type: 'resync' }> {
@@ -26,7 +30,8 @@ export class StudySocket {
 
       const connect = () => {
         const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-        ws = new WebSocket(`${proto}://${location.host}/ws/studies/${studyId}`);
+        const token = encodeURIComponent(this.auth.token() ?? '');
+        ws = new WebSocket(`${proto}://${location.host}/ws/studies/${studyId}?token=${token}`);
         this.status.set(retry === 0 ? 'connecting' : 'reconnecting');
 
         ws.onopen = () => {
@@ -36,9 +41,13 @@ export class StudySocket {
           pingTimer = setInterval(() => ws?.send('ping'), 25_000);
         };
         ws.onmessage = (msg) => subscriber.next(JSON.parse(msg.data) as ChangeEvent);
-        ws.onclose = () => {
+        ws.onclose = (event) => {
           clearInterval(pingTimer);
           if (closedByUs) return;
+          if (event.code === 1008) {
+            this.auth.logout(location.pathname); // token expired or invalid
+            return;
+          }
           this.status.set('reconnecting');
           const delay = Math.min(15_000, 1000 * 2 ** retry++);
           retryTimer = setTimeout(connect, delay);
