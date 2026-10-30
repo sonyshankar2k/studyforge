@@ -31,6 +31,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://studyforge:studyforge@db:5432/studyforge
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: '["http://localhost:8080","http://localhost:4200"]'
+      # Local demo only. Anywhere real, use a long random secret from a secrets manager.
+      JWT_SECRET: local-docker-secret-change-me-0123456789abcdef
     ports:
       - "8000:8000"
     depends_on:

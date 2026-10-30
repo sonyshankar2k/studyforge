@@ -8,7 +8,7 @@ Think of these as TypeScript interfaces that also validate at runtime.
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.models import ArmType, ObjectiveLevel, StudyPhase, StudyStatus
 
@@ -123,3 +123,22 @@ class ConflictDetail(BaseModel):
 
     message: str
     current: dict[str, Any]
+
+
+# ---------- Auth ----------
+class UserOut(ORMModel):
+    id: int
+    email: EmailStr
+    display_name: str
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    display_name: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8, max_length=128)
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut

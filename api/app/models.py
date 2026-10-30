@@ -47,6 +47,16 @@ class ObjectiveLevel(StrEnum):
     EXPLORATORY = "exploratory"
 
 
+class User(Base):
+    __tablename__ = "app_user"  # "user" is a reserved word in PostgreSQL
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(100))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Study(Base):
     __tablename__ = "study"
 

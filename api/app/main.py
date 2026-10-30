@@ -1,27 +1,27 @@
 """StudyForge API entry point.
 
-Run locally:   uv run fastapi dev app/main.py
-API docs:      http://localhost:8000/docs   (auto-generated from the code)
+Run locally:   uv run alembic upgrade head      (create/upgrade the database schema)
+               uv run fastapi dev app/main.py
+API docs:      http://localhost:8000/docs        (auto-generated from the code)
 """
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.db import Base, SessionLocal, engine
+from app.db import SessionLocal, engine
+from app.models import User
 from app.realtime import hub
-from app.routers import studies
+from app.routers import auth, studies
+from app.security import decode_access_token
 from app.seed import seed_demo_data
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Starter shortcut: create tables on startup.
-    # Week 1 task: switch to Alembic migrations (`alembic init`, autogenerate).
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # The schema is managed by Alembic migrations (see api/migrations), not created here.
     if settings.seed_demo_data:
         async with SessionLocal() as session:
             await seed_demo_data(session)
@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="StudyForge API",
     description="Collaborative clinical study design editor",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -43,6 +43,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(studies.router)
 
 
@@ -52,7 +53,16 @@ async def health() -> dict[str, str]:
 
 
 @app.websocket("/ws/studies/{study_id}")
-async def study_updates(ws: WebSocket, study_id: int):
+async def study_updates(ws: WebSocket, study_id: int, token: str = ""):
+    # Browsers can't set an Authorization header on WebSockets, so the token
+    # comes as a query parameter. Reject the connection if it's not valid.
+    user_id = decode_access_token(token)
+    async with SessionLocal() as session:
+        user = await session.get(User, user_id) if user_id is not None else None
+    if user is None:
+        await ws.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await hub.join(study_id, ws)
     try:
         while True:
