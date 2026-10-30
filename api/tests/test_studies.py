@@ -1,7 +1,8 @@
 """API tests: CRUD, optimistic concurrency, conditional validation, audit trail."""
 
 
-async def test_health(client):
+async def test_health(anon_client):
+    client = anon_client
     resp = await client.get("/api/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
@@ -29,13 +30,13 @@ async def test_update_increments_version(client, study):
     assert resp.json()["version"] == 2
 
 
-async def test_stale_update_returns_409_with_current_record(client, study):
+async def test_stale_update_returns_409_with_current_record(client, study, auth):
     sid = study["id"]
     # Alice saves first (version 1 -> 2)
     first = await client.patch(
         f"/api/studies/{sid}",
         json={"version": 1, "title": "Alice's title"},
-        headers={"X-User": "alice"},
+        headers=auth["alice"],
     )
     assert first.status_code == 200
 
@@ -43,7 +44,7 @@ async def test_stale_update_returns_409_with_current_record(client, study):
     second = await client.patch(
         f"/api/studies/{sid}",
         json={"version": 1, "title": "Bob's title"},
-        headers={"X-User": "bob"},
+        headers=auth["bob"],
     )
     assert second.status_code == 409
     detail = second.json()["detail"]
@@ -101,12 +102,12 @@ async def test_delete_arm_with_stale_version_is_rejected(client, study):
     assert ok.status_code == 204
 
 
-async def test_audit_trail_records_who_changed_what(client, study):
+async def test_audit_trail_records_who_changed_what(client, study, auth):
     sid = study["id"]
     await client.patch(
         f"/api/studies/{sid}",
         json={"version": 1, "title": "New Title"},
-        headers={"X-User": "carol"},
+        headers=auth["carol"],
     )
     resp = await client.get(f"/api/studies/{sid}/audit")
     entries = resp.json()
@@ -114,10 +115,10 @@ async def test_audit_trail_records_who_changed_what(client, study):
     assert len(entries) == 2  # create + update, newest first
     latest = entries[0]
     assert latest["action"] == "update"
-    assert latest["changed_by"] == "carol"
+    assert latest["changed_by"] == "carol@test.dev"
     assert latest["changes"]["title"] == {"old": "Test Study", "new": "New Title"}
     assert entries[1]["action"] == "create"
-    assert entries[1]["changed_by"] == "alice"
+    assert entries[1]["changed_by"] == "alice@test.dev"
 
 
 async def test_objective_crud(client, study):

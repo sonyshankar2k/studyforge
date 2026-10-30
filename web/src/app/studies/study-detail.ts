@@ -16,7 +16,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 import { Observable, firstValueFrom, forkJoin } from 'rxjs';
 
-import { CurrentUser } from '../core/current-user';
+import { AuthService } from '../core/auth';
 import {
   Arm,
   ArmInput,
@@ -84,7 +84,7 @@ export class StudyDetailPage {
   private readonly api = inject(StudiesApi);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
-  private readonly user = inject(CurrentUser);
+  private readonly auth = inject(AuthService);
   private readonly fb = inject(FormBuilder).nonNullable;
   protected readonly socket = inject(StudySocket);
 
@@ -125,7 +125,7 @@ export class StudyDetailPage {
           this.reload(); // we may have missed events while offline
           return;
         }
-        if (event.changed_by === this.user.name()) return; // our own save
+        if (event.changed_by === this.auth.user()?.email) return; // our own save
         this.snack.open(
           `${event.changed_by} ${verb(event.action)} ${event.entity_type === 'study' ? 'study details' : `an ${event.entity_type}`}`,
           'OK',

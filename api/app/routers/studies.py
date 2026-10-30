@@ -1,10 +1,10 @@
 """REST endpoints for studies, arms, objectives and the audit trail."""
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.deps import SessionDep, UserDep
+from app.deps import SessionDep, UserDep, current_user
 from app.editing import apply_update, check_version, notify, record_audit, to_dict
 from app.models import Arm, ArmType, AuditLog, Objective, Study
 from app.schemas import (
@@ -21,7 +21,8 @@ from app.schemas import (
     StudyUpdate,
 )
 
-router = APIRouter(prefix="/api", tags=["studies"])
+# Every endpoint in this router requires a signed-in user (401 otherwise).
+router = APIRouter(prefix="/api", tags=["studies"], dependencies=[Depends(current_user)])
 
 STUDY_FIELDS = ["title", "acronym", "phase", "therapeutic_area", "status"]
 ARM_FIELDS = ["name", "arm_type", "description", "planned_size", "dose"]

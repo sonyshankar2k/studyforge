@@ -15,5 +15,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:4200"]
     seed_demo_data: bool = True
 
+    # JWT settings. The default secret is for local development ONLY:
+    # set JWT_SECRET to a long random value anywhere real (e.g. `openssl rand -hex 32`).
+    jwt_secret: str = "dev-only-change-me-0123456789abcdef0123456789abcdef"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 480  # 8 hours
+
 
 settings = Settings()

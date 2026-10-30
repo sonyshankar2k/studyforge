@@ -1,23 +1,21 @@
 import { Component, inject } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatSelectModule } from '@angular/material/select';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { RouterLink, RouterOutlet } from '@angular/router';
 
-import { CurrentUser, DEMO_USERS } from './core/current-user';
+import { AuthService } from './core/auth';
 
 @Component({
   selector: 'app-root',
   imports: [
     RouterOutlet,
     RouterLink,
-    FormsModule,
     MatToolbarModule,
     MatIconModule,
-    MatFormFieldModule,
-    MatSelectModule,
+    MatButtonModule,
+    MatMenuModule,
   ],
   template: `
     <mat-toolbar class="toolbar">
@@ -26,14 +24,19 @@ import { CurrentUser, DEMO_USERS } from './core/current-user';
         <span>StudyForge</span>
       </a>
       <span class="spacer"></span>
-      <span class="editing-label">Editing as</span>
-      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="user-picker">
-        <mat-select [(ngModel)]="user.name" aria-label="Editing as">
-          @for (u of users; track u) {
-            <mat-option [value]="u">{{ u }}</mat-option>
-          }
-        </mat-select>
-      </mat-form-field>
+      @if (auth.user(); as user) {
+        <button mat-button [matMenuTriggerFor]="userMenu" class="user-button">
+          <mat-icon aria-hidden="true">account_circle</mat-icon>
+          {{ user.display_name }}
+        </button>
+        <mat-menu #userMenu="matMenu" xPosition="before">
+          <div class="menu-email" aria-hidden="true">{{ user.email }}</div>
+          <button mat-menu-item (click)="auth.logout()">
+            <mat-icon>logout</mat-icon>
+            <span>Sign out</span>
+          </button>
+        </mat-menu>
+      }
     </mat-toolbar>
     <main class="page">
       <router-outlet />
@@ -57,15 +60,10 @@ import { CurrentUser, DEMO_USERS } from './core/current-user';
     .spacer {
       flex: 1;
     }
-    .editing-label {
-      font-size: 14px;
+    .menu-email {
+      padding: 8px 16px;
+      font: var(--mat-sys-body-small);
       color: var(--mat-sys-on-surface-variant);
-    }
-    .user-picker {
-      width: 130px;
-      font-size: 14px;
-      --mat-form-field-container-height: 40px;
-      --mat-form-field-container-vertical-padding: 8px;
     }
     .page {
       max-width: 1100px;
@@ -75,6 +73,5 @@ import { CurrentUser, DEMO_USERS } from './core/current-user';
   `,
 })
 export class App {
-  protected readonly user = inject(CurrentUser);
-  protected readonly users = DEMO_USERS;
+  protected readonly auth = inject(AuthService);
 }

@@ -20,6 +20,37 @@ jobs:
       - name: Test
         run: uv run pytest -q
 
+  # Applies the migrations to a real PostgreSQL and fails if the models
+  # have changes that no migration covers.
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: studyforge
+          POSTGRES_PASSWORD: studyforge
+          POSTGRES_DB: studyforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://studyforge:studyforge@localhost:5432/studyforge
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - name: Upgrade to head
+        run: uv run alembic upgrade head
+      - name: Models match migrations
+        run: uv run alembic check
+      - name: Downgrade and upgrade again
+        run: uv run alembic downgrade base && uv run alembic upgrade head
+
   web:
     runs-on: ubuntu-latest
     defaults:
