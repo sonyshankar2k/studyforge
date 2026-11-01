@@ -1,0 +1,193 @@
+<mat-card appearance="outlined">
+  <mat-card-header>
+    <mat-card-title>Read a protocol with AI</mat-card-title>
+    <mat-card-subtitle>
+      Upload a protocol PDF. The arms, objectives and endpoints it finds are shown for your review;
+      nothing is added to the study until you choose to.
+    </mat-card-subtitle>
+  </mat-card-header>
+
+  <mat-card-content>
+    <div
+      class="dropzone"
+      [class.dragover]="dragOver()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="dragOver.set(false)"
+      (drop)="onDrop($event)"
+    >
+      @if (file(); as f) {
+        <mat-icon aria-hidden="true">description</mat-icon>
+        <div class="file-info">
+          <strong>{{ f.name }}</strong>
+          <span>{{ sizeLabel(f.size) }}</span>
+        </div>
+        <button mat-button type="button" (click)="clearFile()" [disabled]="uploading()">
+          Remove
+        </button>
+        <button mat-flat-button type="button" (click)="upload()" [disabled]="uploading()">
+          <mat-icon>auto_awesome</mat-icon> {{ uploading() ? 'Uploading…' : 'Start' }}
+        </button>
+      } @else {
+        <mat-icon aria-hidden="true">upload_file</mat-icon>
+        <span>Drop a PDF or .txt protocol here, or</span>
+        <label class="choose">
+          <input
+            type="file"
+            accept=".pdf,.txt,application/pdf,text/plain"
+            (change)="onFileInput($event)"
+          />
+          <span>choose a file</span>
+        </label>
+        <span class="hint">Up to 10 MB</span>
+      }
+    </div>
+    @if (uploadError()) {
+      <p class="error" role="alert">{{ uploadError() }}</p>
+    }
+
+    @if (jobs().length) {
+      <h3 class="runs-heading">Recent runs</h3>
+      <ul class="jobs" aria-live="polite">
+        @for (job of jobs(); track job.id) {
+          <li class="job" [attr.data-status]="job.status">
+            <div class="job-head">
+              <mat-icon aria-hidden="true" class="status-icon">
+                @switch (job.status) {
+                  @case ('succeeded') {
+                    check_circle
+                  }
+                  @case ('failed') {
+                    error
+                  }
+                  @case ('cancelled') {
+                    cancel
+                  }
+                  @default {
+                    hourglass_top
+                  }
+                }
+              </mat-icon>
+              <div class="job-title">
+                <strong>{{ job.filename }}</strong>
+                <span class="meta">
+                  {{ job.created_by }} · {{ job.created_at | date: 'MMM d, h:mm a' }}
+                  @if (job.extractor) {
+                    · {{ job.extractor === 'claude' ? 'Claude' : 'Rule-based parser' }}
+                  }
+                </span>
+              </div>
+              <span class="status status-{{ job.status }}">{{ job.status | statusLabel }}</span>
+            </div>
+
+            @if (isActive(job)) {
+              <mat-progress-bar
+                [mode]="job.status === 'queued' ? 'indeterminate' : 'determinate'"
+                [value]="job.progress"
+                [attr.aria-label]="'Progress for ' + job.filename"
+              />
+            }
+            <p class="stage">{{ job.stage }}</p>
+            @if (job.error) {
+              <p class="error">{{ job.error }}</p>
+            }
+
+            <div class="job-actions">
+              @if (isActive(job)) {
+                <button mat-button type="button" (click)="cancel(job)">Cancel</button>
+              }
+              @if (job.status === 'failed' || job.status === 'cancelled') {
+                <button mat-button type="button" (click)="retry(job)">
+                  <mat-icon>refresh</mat-icon> Try again
+                </button>
+              }
+              @if (job.status === 'succeeded') {
+                @if (job.applied_at) {
+                  <span class="applied">
+                    <mat-icon aria-hidden="true">done_all</mat-icon>
+                    Added to the study {{ job.applied_at | date: 'MMM d, h:mm a' }}
+                  </span>
+                } @else {
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    (click)="toggleReview(job)"
+                    [attr.aria-expanded]="reviewing() === job.id"
+                  >
+                    {{ reviewing() === job.id ? 'Hide results' : 'Review results' }}
+                  </button>
+                }
+              }
+            </div>
+
+            @if (reviewing() === job.id && job.result; as result) {
+              <section class="review" [attr.aria-label]="'Results for ' + job.filename">
+                @if (result.notes) {
+                  <p class="notes">
+                    <mat-icon aria-hidden="true">info</mat-icon> {{ result.notes }}
+                  </p>
+                }
+
+                <h4>Arms ({{ result.arms.length }})</h4>
+                @for (arm of result.arms; track $index; let i = $index) {
+                  <div class="pick">
+                    <mat-checkbox
+                      [checked]="isSelected(job.id, 'arms', i)"
+                      [disabled]="!!armProblem(arm)"
+                      (change)="toggle(job.id, 'arms', i, $event.checked)"
+                    >
+                      <span class="pick-title">{{ arm.name }}</span>
+                      <span class="tag">{{ arm.arm_type | statusLabel }}</span>
+                    </mat-checkbox>
+                    <div class="pick-meta">
+                      @if (arm.dose) {
+                        <span>Dose: {{ arm.dose }}</span>
+                      }
+                      @if (arm.planned_size) {
+                        <span>Planned: {{ arm.planned_size }}</span>
+                      }
+                      @if (armProblem(arm); as problem) {
+                        <span class="warn">{{ problem }}</span>
+                      }
+                    </div>
+                  </div>
+                } @empty {
+                  <p class="empty">No arms found.</p>
+                }
+
+                <h4>Objectives ({{ result.objectives.length }})</h4>
+                @for (obj of result.objectives; track $index; let i = $index) {
+                  <div class="pick">
+                    <mat-checkbox
+                      [checked]="isSelected(job.id, 'objectives', i)"
+                      (change)="toggle(job.id, 'objectives', i, $event.checked)"
+                    >
+                      <span class="tag">{{ obj.level | statusLabel }}</span>
+                      <span class="pick-title">{{ obj.description }}</span>
+                    </mat-checkbox>
+                    <div class="pick-meta">
+                      <span>Endpoint: {{ obj.endpoint }}</span>
+                    </div>
+                  </div>
+                } @empty {
+                  <p class="empty">No objectives found.</p>
+                }
+
+                <div class="review-actions">
+                  <span class="meta">Check each item against the protocol before adding it.</span>
+                  <button
+                    mat-flat-button
+                    type="button"
+                    (click)="apply(job)"
+                    [disabled]="selectedCount(job.id) === 0 || applying()"
+                  >
+                    Add {{ selectedCount(job.id) }} selected to the study
+                  </button>
+                </div>
+              </section>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </mat-card-content>
+</mat-card>

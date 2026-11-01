@@ -79,3 +79,53 @@ export const ARM_TYPES: { value: ArmType; label: string }[] = [
   { value: 'placebo', label: 'Placebo' },
 ];
 export const OBJECTIVE_LEVELS: ObjectiveLevel[] = ['primary', 'secondary', 'exploratory'];
+
+// ---------- Protocol digitization (Week 2) ----------
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+export interface ExtractedArm {
+  name: string;
+  arm_type: ArmType;
+  dose: string | null;
+  planned_size: number | null;
+  description: string | null;
+}
+
+export interface ExtractedObjective {
+  level: ObjectiveLevel;
+  description: string;
+  endpoint: string;
+}
+
+export interface ExtractionResult {
+  arms: ExtractedArm[];
+  objectives: ExtractedObjective[];
+  notes: string | null;
+}
+
+export interface DigitizationJob {
+  id: number;
+  study_id: number;
+  created_by: string;
+  filename: string;
+  size_bytes: number;
+  status: JobStatus;
+  progress: number;
+  stage: string;
+  attempts: number;
+  extractor: string | null;
+  error: string | null;
+  result: ExtractionResult | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+  applied_at: string | null;
+}
+
+/** Pushed over the WebSocket whenever a job's status or progress changes. */
+export interface JobEvent {
+  type: 'job';
+  job: DigitizationJob;
+}
+
+export type StudyEvent = ChangeEvent | JobEvent | { type: 'resync' };

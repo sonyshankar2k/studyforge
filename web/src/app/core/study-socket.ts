@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { AuthService } from './auth';
-import { ChangeEvent } from './models';
+import { StudyEvent } from './models';
 
 export type SocketStatus = 'connecting' | 'live' | 'reconnecting';
 
@@ -20,7 +20,7 @@ export class StudySocket {
   private readonly auth = inject(AuthService);
   readonly status = signal<SocketStatus>('connecting');
 
-  watch(studyId: number): Observable<ChangeEvent | { type: 'resync' }> {
+  watch(studyId: number): Observable<StudyEvent> {
     return new Observable((subscriber) => {
       let ws: WebSocket | undefined;
       let retry = 0;
@@ -40,7 +40,7 @@ export class StudySocket {
           this.status.set('live');
           pingTimer = setInterval(() => ws?.send('ping'), 25_000);
         };
-        ws.onmessage = (msg) => subscriber.next(JSON.parse(msg.data) as ChangeEvent);
+        ws.onmessage = (msg) => subscriber.next(JSON.parse(msg.data) as StudyEvent);
         ws.onclose = (event) => {
           clearInterval(pingTimer);
           if (closedByUs) return;

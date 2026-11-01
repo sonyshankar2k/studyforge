@@ -200,6 +200,17 @@
       </div>
     </mat-tab>
 
+    <mat-tab label="AI digitize">
+      <div class="tab-body">
+        <app-digitize-panel
+          [studyId]="s.id"
+          [jobUpdate]="jobUpdate()"
+          [refresh]="resyncs()"
+          (applied)="reload()"
+        />
+      </div>
+    </mat-tab>
+
     <mat-tab label="Audit trail">
       <div class="tab-body">
         <p class="subtitle">

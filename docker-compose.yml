@@ -1,4 +1,6 @@
 # One command starts everything:  docker compose up --build
+# Optional: to use Claude for protocol digitization, put ANTHROPIC_API_KEY=... in a
+# .env file next to this one. Without it, a free rule-based parser is used.
 #   App:      http://localhost:8080
 #   API docs: http://localhost:8000/docs
 
@@ -19,7 +21,7 @@ services:
       timeout: 3s
       retries: 20
 
-  # Not used yet: background jobs (Week 2) will use it as the queue.
+  # Job queue for the worker, and pub/sub for live events between processes.
   redis:
     image: redis:8-alpine
     ports:
@@ -27,17 +29,34 @@ services:
 
   api:
     build: ./api
-    environment:
+    environment: &api-env
       DATABASE_URL: postgresql+asyncpg://studyforge:studyforge@db:5432/studyforge
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: '["http://localhost:8080","http://localhost:4200"]'
       # Local demo only. Anywhere real, use a long random secret from a secrets manager.
       JWT_SECRET: local-docker-secret-change-me-0123456789abcdef
+      UPLOAD_DIR: /data/uploads
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - uploads:/data/uploads
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
+
+  # Background worker: same image as the API, different command.
+  worker:
+    build: ./api
+    command: ["arq", "app.worker.WorkerSettings"]
+    environment: *api-env
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      api:
+        condition: service_started
       redis:
         condition: service_started
 
@@ -50,3 +69,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:
