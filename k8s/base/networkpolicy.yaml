@@ -1,0 +1,34 @@
+# Default deny: a pod accepts traffic only when a policy below allows it.
+# (Outbound traffic is open: the app calls S3, the Claude API, RDS and Redis.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+# The web app and the API are reached through the ingress / load balancer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: web }
+  policyTypes: ["Ingress"]
+  ingress:
+    - ports:
+        - { port: 8080, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: api }
+  policyTypes: ["Ingress"]
+  ingress:
+    - ports:
+        - { port: 8000, protocol: TCP }

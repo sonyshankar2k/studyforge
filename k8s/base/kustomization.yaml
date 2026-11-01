@@ -1,0 +1,19 @@
+# StudyForge on Kubernetes. Render with:  kubectl kustomize k8s/overlays/dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: studyforge
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: studyforge
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - migrate-job.yaml
+  - api.yaml
+  - worker.yaml
+  - web.yaml
+  - ingress.yaml
+  - autoscaling.yaml
+  - networkpolicy.yaml

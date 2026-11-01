@@ -1,0 +1,64 @@
+# Everything in one cluster, for kind / minikube / Docker Desktop:
+#   docker compose build && kind load docker-image studyforge-api:local studyforge-web:local
+#   kubectl apply -k k8s/overlays/dev
+#   kubectl -n studyforge port-forward svc/web 8080:80   ->  http://localhost:8080
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: studyforge
+resources:
+  - ../../base
+  - backing-services.yaml
+  - networkpolicy.yaml
+images:
+  - name: studyforge-api
+    newName: studyforge-api
+    newTag: local
+  - name: studyforge-web
+    newName: studyforge-web
+    newTag: local
+# Local-only credentials (never use these anywhere real).
+secretGenerator:
+  - name: studyforge-secrets
+    literals:
+      - DATABASE_URL=postgresql+asyncpg://studyforge:studyforge@postgres:5432/studyforge
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=dev-cluster-secret-change-me-0123456789abcdef
+      - ANTHROPIC_API_KEY=
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin
+  - name: minio-credentials
+    literals:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+patches:
+  - target: { kind: ConfigMap, name: studyforge-config }
+    patch: |
+      - op: replace
+        path: /data/S3_BUCKET
+        value: studyforge-uploads
+      - op: add
+        path: /data/S3_ENDPOINT_URL
+        value: http://minio:9000
+      - op: replace
+        path: /data/CORS_ORIGINS
+        value: '["http://localhost:8080"]'
+  - target: { kind: Deployment, name: "api|web" }
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target: { kind: Deployment, name: "api|worker|web" }
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target: { kind: Job, name: studyforge-migrate }
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+  - target: { kind: Ingress, name: studyforge }
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: studyforge.localhost

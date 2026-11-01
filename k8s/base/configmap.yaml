@@ -1,0 +1,16 @@
+# Non-secret settings (env vars read by app/config.py). Secrets live in the
+# "studyforge-secrets" Secret: DATABASE_URL, REDIS_URL, JWT_SECRET, ANTHROPIC_API_KEY.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: studyforge-config
+data:
+  SEED_DEMO_DATA: "true"
+  CORS_ORIGINS: '["https://studyforge.example.com"]'
+  STORAGE_BACKEND: s3
+  S3_BUCKET: studyforge-dev-uploads
+  AWS_REGION: us-east-1
+  LOG_JSON: "true"
+  LOG_LEVEL: INFO
+  # Traces/metrics go to an OpenTelemetry Collector when this is set.
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""

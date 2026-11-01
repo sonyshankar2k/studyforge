@@ -1,0 +1,24 @@
+# Weekly dependency update PRs. CI (tests, audits, scans) runs on each one.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /api
+    schedule: { interval: weekly }
+    groups:
+      opentelemetry:
+        patterns: ["opentelemetry-*"]
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly }
+    groups:
+      angular:
+        patterns: ["@angular/*", "@angular-devkit/*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directories: ["/api", "/web"]
+    schedule: { interval: weekly }
+  - package-ecosystem: terraform
+    directory: /infra/terraform
+    schedule: { interval: weekly }

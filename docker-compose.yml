@@ -3,6 +3,12 @@
 # .env file next to this one. Without it, a free rule-based parser is used.
 #   App:      http://localhost:8080
 #   API docs: http://localhost:8000/docs
+#
+# Optional extras (Week 4), switched on with profiles:
+#   Tracing:  OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 docker compose --profile observability up --build
+#             then open Jaeger at http://localhost:16686
+#   S3:       STORAGE_BACKEND=s3 docker compose --profile s3 up --build
+#             (MinIO, an S3-compatible server; console at http://localhost:9001, minioadmin/minioadmin)
 
 services:
   db:
@@ -29,6 +35,7 @@ services:
 
   api:
     build: ./api
+    image: studyforge-api:local
     environment: &api-env
       DATABASE_URL: postgresql+asyncpg://studyforge:studyforge@db:5432/studyforge
       REDIS_URL: redis://redis:6379/0
@@ -37,8 +44,15 @@ services:
       JWT_SECRET: local-docker-secret-change-me-0123456789abcdef
       UPLOAD_DIR: /data/uploads
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LOG_JSON: ${LOG_JSON:-true}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      S3_BUCKET: studyforge-uploads
+      S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin  # MinIO's local default, not a real AWS key
+      AWS_SECRET_ACCESS_KEY: minioadmin
     volumes:
-      - uploads:/data/uploads
+      - upload-data:/data/uploads
     ports:
       - "8000:8000"
     healthcheck:
@@ -54,11 +68,14 @@ services:
 
   # Background worker: same image as the API, different command.
   worker:
-    build: ./api
-    command: ["arq", "app.worker.WorkerSettings"]
-    environment: *api-env
+    image: studyforge-api:local
+    pull_policy: never # built by the api service
+    command: ["python", "-m", "app.worker"]
+    environment:
+      <<: *api-env
+      SERVICE_NAME: studyforge-worker
     volumes:
-      - uploads:/data/uploads
+      - upload-data:/data/uploads
     depends_on:
       api:
         condition: service_started
@@ -67,12 +84,42 @@ services:
 
   web:
     build: ./web
+    image: studyforge-web:local
     ports:
-      - "8080:80"
+      - "8080:8080"
     depends_on:
       api:
         condition: service_healthy
 
+  # ---- optional: tracing UI (profile "observability") ----
+  jaeger:
+    image: jaegertracing/jaeger:2.22.0
+    profiles: [observability]
+    ports:
+      - "16686:16686" # UI
+      - "4318:4318"   # OTLP over HTTP
+
+  # ---- optional: S3-compatible storage (profile "s3") ----
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    profiles: [s3]
+    command: ["server", "/data", "--console-address", ":9001"]
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+  minio-bucket:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    profiles: [s3]
+    depends_on: [minio]
+    entrypoint: >
+      sh -c "until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done;
+             mc mb --ignore-existing local/studyforge-uploads"
+
 volumes:
   pgdata:
-  uploads:
+  # The API runs as a non-root user since Week 4. A new volume name means Docker
+  # creates it with the right owner (an old root-owned "uploads" volume is not reused).
+  upload-data:
+  minio-data:

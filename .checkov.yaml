@@ -1,0 +1,18 @@
+# Infrastructure-as-code security scan (checkov), run in CI on infra/ and k8s/.
+# Each skipped check is a deliberate choice for a portfolio deployment:
+compact: true
+quiet: true
+download-external-modules: false
+skip-check:
+  - CKV_TF_1     # modules are pinned to a version range from the public registry, not a commit hash
+  - CKV_AWS_136  # ECR uses AES256; a customer-managed KMS key adds cost with no benefit here
+  - CKV_AWS_145  # S3 uses SSE-S3 (AES256), which the app also requests on every upload
+  - CKV2_AWS_62  # no consumer for S3 event notifications
+  - CKV_AWS_18   # access logging needs a second bucket; enable in prod
+  - CKV_AWS_144  # cross-region replication is a prod disaster-recovery decision
+  # Kubernetes
+  - CKV_K8S_11   # no CPU limits on purpose (they cause throttling); CPU requests and memory limits are set
+  - CKV_K8S_15   # images use immutable tags (git SHA, ECR IMMUTABLE), so IfNotPresent is safe
+  - CKV_K8S_43   # same: immutable tags instead of digests
+  - CKV_K8S_35   # 12-factor config: secrets are read from env vars
+  - CKV_K8S_40   # official images' own non-root UIDs (nginx 101, postgres 70, redis 999)
