@@ -11,18 +11,28 @@
       <h1>{{ s.title }}</h1>
       <p class="subtitle">{{ s.phase }} · {{ s.status | statusLabel }} · version {{ s.version }}</p>
     </div>
-    <span
-      class="live live-{{ socket.status() }}"
-      role="status"
-      [matTooltip]="
-        socket.status() === 'live'
-          ? 'Changes by others appear automatically'
-          : 'Trying to reconnect…'
-      "
-    >
-      <span class="dot" aria-hidden="true"></span>
-      {{ socket.status() === 'live' ? 'Live' : 'Reconnecting…' }}
-    </span>
+    <div class="header-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="exportUsdm()"
+        matTooltip="CDISC USDM-shaped JSON"
+      >
+        <mat-icon>download</mat-icon> Export USDM
+      </button>
+      <span
+        class="live live-{{ socket.status() }}"
+        role="status"
+        [matTooltip]="
+          socket.status() === 'live'
+            ? 'Changes by others appear automatically'
+            : 'Trying to reconnect…'
+        "
+      >
+        <span class="dot" aria-hidden="true"></span>
+        {{ socket.status() === 'live' ? 'Live' : 'Reconnecting…' }}
+      </span>
+    </div>
   </header>
 
   <mat-tab-group animationDuration="0ms">
@@ -200,6 +210,18 @@
       </div>
     </mat-tab>
 
+    <mat-tab label="Eligibility">
+      <div class="tab-body">
+        <app-eligibility-panel [studyId]="s.id" [refresh]="resyncs()" />
+      </div>
+    </mat-tab>
+
+    <mat-tab label="Schedule">
+      <div class="tab-body">
+        <app-schedule-panel [studyId]="s.id" [refresh]="resyncs()" />
+      </div>
+    </mat-tab>
+
     <mat-tab label="AI digitize">
       <div class="tab-body">
         <app-digitize-panel
@@ -221,7 +243,10 @@
             <li class="audit-entry">
               <div class="audit-head">
                 <strong>{{ entry.changed_by }}</strong>
-                <span>{{ entry.action }}d {{ entry.entity_type }} #{{ entry.entity_id }}</span>
+                <span
+                  >{{ auditVerb(entry.action) }} {{ entry.entity_type
+                  }}{{ entry.entity_id ? ' #' + entry.entity_id : '' }}</span
+                >
                 <time class="audit-time">{{ entry.changed_at | date: 'MMM d, y, h:mm:ss a' }}</time>
               </div>
               <dl class="audit-changes">

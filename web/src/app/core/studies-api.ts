@@ -5,10 +5,16 @@ import { Observable, map } from 'rxjs';
 import {
   Arm,
   ArmInput,
+  Activity,
   AuditEntry,
+  Criterion,
+  CriterionCategory,
   DigitizationJob,
+  Encounter,
+  EncounterInput,
   Objective,
   ObjectiveInput,
+  Schedule,
   StudyDetail,
   StudyInput,
   StudyStatus,
@@ -116,5 +122,80 @@ export class StudiesApi {
       `${this.base}/jobs/${jobId}/apply`,
       selection,
     );
+  }
+
+  // ---------- Eligibility criteria ----------
+  listCriteria(studyId: number): Observable<Criterion[]> {
+    return this.http.get<Criterion[]>(`${this.base}/studies/${studyId}/criteria`);
+  }
+
+  createCriterion(
+    studyId: number,
+    category: CriterionCategory,
+    text: string,
+  ): Observable<Criterion> {
+    return this.http.post<Criterion>(`${this.base}/studies/${studyId}/criteria`, {
+      category,
+      text,
+    });
+  }
+
+  updateCriterion(id: number, version: number, text: string): Observable<Criterion> {
+    return this.http.patch<Criterion>(`${this.base}/criteria/${id}`, { version, text });
+  }
+
+  deleteCriterion(id: number, version: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/criteria/${id}`, { params: { version } });
+  }
+
+  /** Send the complete new order for one category; 409 if the list changed meanwhile. */
+  reorderCriteria(
+    studyId: number,
+    category: CriterionCategory,
+    ids: number[],
+  ): Observable<Criterion[]> {
+    return this.http.put<Criterion[]>(`${this.base}/studies/${studyId}/criteria/order`, {
+      category,
+      ids,
+    });
+  }
+
+  // ---------- Schedule of Activities ----------
+  getSchedule(studyId: number): Observable<Schedule> {
+    return this.http.get<Schedule>(`${this.base}/studies/${studyId}/schedule`);
+  }
+
+  createEncounter(studyId: number, body: EncounterInput): Observable<Encounter> {
+    return this.http.post<Encounter>(`${this.base}/studies/${studyId}/encounters`, body);
+  }
+
+  deleteEncounter(id: number, version: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/encounters/${id}`, { params: { version } });
+  }
+
+  createActivity(studyId: number, name: string): Observable<Activity> {
+    return this.http.post<Activity>(`${this.base}/studies/${studyId}/activities`, { name });
+  }
+
+  deleteActivity(id: number, version: number): Observable<void> {
+    return this.http.delete<void>(`${this.base}/activities/${id}`, { params: { version } });
+  }
+
+  /** Idempotent: says the state you want, not "toggle", so repeats are harmless. */
+  setCell(
+    studyId: number,
+    encounterId: number,
+    activityId: number,
+    planned: boolean,
+  ): Observable<{ planned: boolean; changed: boolean }> {
+    return this.http.put<{ planned: boolean; changed: boolean }>(
+      `${this.base}/studies/${studyId}/schedule/cells`,
+      { encounter_id: encounterId, activity_id: activityId, planned },
+    );
+  }
+
+  /** The design as USDM-shaped JSON. */
+  exportUsdm(studyId: number): Observable<unknown> {
+    return this.http.get<unknown>(`${this.base}/studies/${studyId}/usdm`);
   }
 }

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Path, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,12 @@ from app.models import User
 from app.security import decode_access_token
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+# Ids and versions are PostgreSQL INTEGER columns. Bounding them here turns an absurd
+# value (e.g. /api/studies/99999999999999999999) into a clean 422 instead of a 500.
+MAX_DB_INT = 2_147_483_647
+Id = Annotated[int, Path(ge=1, le=MAX_DB_INT)]
+VersionQuery = Annotated[int, Query(ge=1, le=MAX_DB_INT, description="The version you last read")]
 
 # tokenUrl powers the "Authorize" button in Swagger UI (/docs).
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")

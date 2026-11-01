@@ -1,11 +1,14 @@
 """REST endpoints for studies, arms, objectives and the audit trail."""
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.deps import SessionDep, UserDep, current_user
+from app.deps import MAX_DB_INT, Id, SessionDep, UserDep, VersionQuery, current_user
 from app.editing import apply_update, check_version, notify, record_audit, to_dict
+from app.errors import unprocessable
 from app.models import Arm, ArmType, AuditLog, Objective, Study
 from app.schemas import (
     ArmCreate,
@@ -38,7 +41,7 @@ async def _get_or_404(session, model, entity_id: int):
     return entity
 
 
-async def _load_study_detail(session, study_id: int) -> Study:
+async def _load_study_detail(session, study_id: Id) -> Study:
     stmt = (
         select(Study)
         .where(Study.id == study_id)
@@ -67,7 +70,9 @@ async def _acronym_taken(session, acronym: str, exclude_id: int | None = None) -
 
 @router.get("/studies/acronym-available")
 async def acronym_available(
-    session: SessionDep, acronym: str = Query(min_length=1), exclude_id: int | None = None
+    session: SessionDep,
+    acronym: str = Query(min_length=1, max_length=50),
+    exclude_id: Annotated[int | None, Query(ge=1, le=MAX_DB_INT)] = None,
 ) -> dict[str, bool]:
     """Backs the Angular async validator on the acronym field."""
     return {"available": not await _acronym_taken(session, acronym, exclude_id)}
@@ -76,7 +81,7 @@ async def acronym_available(
 @router.post("/studies", response_model=StudyDetail, status_code=status.HTTP_201_CREATED)
 async def create_study(body: StudyCreate, session: SessionDep, user: UserDep):
     if body.acronym and await _acronym_taken(session, body.acronym):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "acronym is already in use")
+        raise unprocessable("Another study already uses this acronym.", "acronym")
     study = Study(**body.model_dump())
     session.add(study)
     await session.flush()
@@ -94,16 +99,16 @@ async def create_study(body: StudyCreate, session: SessionDep, user: UserDep):
 
 
 @router.get("/studies/{study_id}", response_model=StudyDetail)
-async def get_study(study_id: int, session: SessionDep):
+async def get_study(study_id: Id, session: SessionDep):
     return await _load_study_detail(session, study_id)
 
 
 @router.patch("/studies/{study_id}", response_model=StudyDetail, responses=CONFLICT_RESPONSE)
-async def update_study(study_id: int, body: StudyUpdate, session: SessionDep, user: UserDep):
+async def update_study(study_id: Id, body: StudyUpdate, session: SessionDep, user: UserDep):
     study = await _get_or_404(session, Study, study_id)
     check_version(study, body.version, STUDY_FIELDS)
     if body.acronym and await _acronym_taken(session, body.acronym, exclude_id=study_id):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "acronym is already in use")
+        raise unprocessable("Another study already uses this acronym.", "acronym")
     changes = apply_update(study, body)
     if changes:
         record_audit(
@@ -121,7 +126,7 @@ async def update_study(study_id: int, body: StudyUpdate, session: SessionDep, us
 
 
 @router.get("/studies/{study_id}/audit", response_model=list[AuditEntryOut])
-async def get_audit_trail(study_id: int, session: SessionDep, limit: int = Query(100, le=500)):
+async def get_audit_trail(study_id: Id, session: SessionDep, limit: int = Query(100, ge=1, le=500)):
     stmt = (
         select(AuditLog)
         .where(AuditLog.study_id == study_id)
@@ -133,7 +138,7 @@ async def get_audit_trail(study_id: int, session: SessionDep, limit: int = Query
 
 # ---------------- Arms ----------------
 @router.post("/studies/{study_id}/arms", response_model=ArmOut, status_code=status.HTTP_201_CREATED)
-async def create_arm(study_id: int, body: ArmCreate, session: SessionDep, user: UserDep):
+async def create_arm(study_id: Id, body: ArmCreate, session: SessionDep, user: UserDep):
     await _get_or_404(session, Study, study_id)
     arm = Arm(study_id=study_id, **body.model_dump())
     session.add(arm)
@@ -153,7 +158,7 @@ async def create_arm(study_id: int, body: ArmCreate, session: SessionDep, user: 
 
 
 @router.patch("/arms/{arm_id}", response_model=ArmOut, responses=CONFLICT_RESPONSE)
-async def update_arm(arm_id: int, body: ArmUpdate, session: SessionDep, user: UserDep):
+async def update_arm(arm_id: Id, body: ArmUpdate, session: SessionDep, user: UserDep):
     arm = await _get_or_404(session, Arm, arm_id)
     check_version(arm, body.version, ARM_FIELDS)
 
@@ -161,9 +166,7 @@ async def update_arm(arm_id: int, body: ArmUpdate, session: SessionDep, user: Us
     merged_type = body.arm_type or arm.arm_type
     merged_dose = body.dose if "dose" in body.model_fields_set else arm.dose
     if merged_type == ArmType.EXPERIMENTAL and not merged_dose:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, "dose is required for experimental arms"
-        )
+        raise unprocessable("Dose is required for experimental arms.", "dose")
 
     changes = apply_update(arm, body)
     if changes:
@@ -184,7 +187,7 @@ async def update_arm(arm_id: int, body: ArmUpdate, session: SessionDep, user: Us
 @router.delete(
     "/arms/{arm_id}", status_code=status.HTTP_204_NO_CONTENT, responses=CONFLICT_RESPONSE
 )
-async def delete_arm(arm_id: int, session: SessionDep, user: UserDep, version: int = Query()):
+async def delete_arm(arm_id: Id, session: SessionDep, user: UserDep, version: VersionQuery):
     arm = await _get_or_404(session, Arm, arm_id)
     check_version(arm, version, ARM_FIELDS)
     study_id = arm.study_id
@@ -210,9 +213,7 @@ async def delete_arm(arm_id: int, session: SessionDep, user: UserDep, version: i
     response_model=ObjectiveOut,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_objective(
-    study_id: int, body: ObjectiveCreate, session: SessionDep, user: UserDep
-):
+async def create_objective(study_id: Id, body: ObjectiveCreate, session: SessionDep, user: UserDep):
     await _get_or_404(session, Study, study_id)
     obj = Objective(study_id=study_id, **body.model_dump())
     session.add(obj)
@@ -235,7 +236,7 @@ async def create_objective(
     "/objectives/{objective_id}", response_model=ObjectiveOut, responses=CONFLICT_RESPONSE
 )
 async def update_objective(
-    objective_id: int, body: ObjectiveUpdate, session: SessionDep, user: UserDep
+    objective_id: Id, body: ObjectiveUpdate, session: SessionDep, user: UserDep
 ):
     obj = await _get_or_404(session, Objective, objective_id)
     check_version(obj, body.version, OBJECTIVE_FIELDS)
@@ -261,7 +262,7 @@ async def update_objective(
     responses=CONFLICT_RESPONSE,
 )
 async def delete_objective(
-    objective_id: int, session: SessionDep, user: UserDep, version: int = Query()
+    objective_id: Id, session: SessionDep, user: UserDep, version: VersionQuery
 ):
     obj = await _get_or_404(session, Objective, objective_id)
     check_version(obj, version, OBJECTIVE_FIELDS)

@@ -21,7 +21,7 @@ from app.events import RedisEventBus, forward_redis_events, set_bus
 from app.models import User
 from app.queue import _queue
 from app.realtime import hub
-from app.routers import auth, jobs, studies
+from app.routers import auth, design, jobs, studies
 from app.security import decode_access_token
 from app.seed import seed_demo_data
 
@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="StudyForge API",
     description="Collaborative clinical study design editor",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -75,6 +75,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(studies.router)
+app.include_router(design.router)
 app.include_router(jobs.router)
 
 
