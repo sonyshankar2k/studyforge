@@ -38,6 +38,8 @@ import { acronymAvailable } from '../core/validators';
 import { ArmDialog } from './arm-dialog';
 import { ConflictChoice, ConflictData, ConflictDialog } from './conflict-dialog';
 import { DigitizePanel } from './digitize-panel';
+import { EligibilityPanel } from './eligibility-panel';
+import { SchedulePanel } from './schedule-panel';
 import { ObjectiveDialog } from './objective-dialog';
 import { StatusLabelPipe } from './status-label.pipe';
 
@@ -54,6 +56,27 @@ const FIELD_LABELS: Record<string, string> = {
   description: 'Description',
   level: 'Level',
   endpoint: 'Endpoint',
+  category: 'Category',
+  ordinal: 'Position',
+  identifier: 'Number',
+  text: 'Text',
+  order: 'Order',
+  day: 'Study day',
+  window_before: 'Days early',
+  window_after: 'Days late',
+  planned_activities_removed: 'Planned activities removed',
+  source: 'Source',
+};
+
+/** How a change by someone else is described in the live notification. */
+const ENTITY_LABEL: Record<string, string> = {
+  study: 'study details',
+  arm: 'an arm',
+  objective: 'an objective',
+  criterion: 'eligibility criteria',
+  encounter: 'a visit',
+  activity: 'an activity',
+  schedule: 'the schedule',
 };
 
 type StudyChanges = Partial<StudyInput & { status: StudyStatus }>;
@@ -76,6 +99,8 @@ type StudyChanges = Partial<StudyInput & { status: StudyStatus }>;
     MatTooltipModule,
     StatusLabelPipe,
     DigitizePanel,
+    EligibilityPanel,
+    SchedulePanel,
   ],
   templateUrl: './study-detail.html',
   styleUrl: './study-detail.scss',
@@ -139,13 +164,32 @@ export class StudyDetailPage {
         }
         if (event.changed_by === this.auth.user()?.email) return; // our own save
         this.snack.open(
-          `${event.changed_by} ${verb(event.action)} ${event.entity_type === 'study' ? 'study details' : `an ${event.entity_type}`}`,
+          `${event.changed_by} ${verb(event.action)} ${ENTITY_LABEL[event.entity_type] ?? event.entity_type}`,
           'OK',
           { duration: 4000 },
         );
         this.reload();
+        this.resyncs.update((n) => n + 1); // panels (criteria, schedule) refetch too
       });
       onCleanup(() => sub.unsubscribe());
+    });
+  }
+
+  /** Download the design as USDM-shaped JSON. */
+  protected exportUsdm(): void {
+    const study = this.study();
+    if (!study) return;
+    this.api.exportUsdm(study.id).subscribe({
+      next: (usdm) => {
+        const blob = new Blob([JSON.stringify(usdm, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${(study.acronym || `study-${study.id}`).replace(/[^\w.-]+/g, '_')}-usdm.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      },
+      error: () => this.snack.open('Could not export the study design.', 'OK', { duration: 4000 }),
     });
   }
 
@@ -375,6 +419,10 @@ export class StudyDetailPage {
     return firstValueFrom(ref.afterClosed()) as Promise<R | undefined>;
   }
 
+  protected auditVerb(action: string): string {
+    return action === 'reorder' ? 'reordered' : `${action}d`;
+  }
+
   protected label(field: string): string {
     return FIELD_LABELS[field] ?? field;
   }
@@ -403,7 +451,9 @@ function pickArm(arm: Arm): ArmInput {
 }
 
 function verb(action: string): string {
-  return action === 'create' ? 'added' : action === 'delete' ? 'deleted' : 'updated';
+  if (action === 'create') return 'added';
+  if (action === 'delete') return 'deleted';
+  return action === 'reorder' ? 'reordered' : 'updated';
 }
 
 function show(value: unknown): string {

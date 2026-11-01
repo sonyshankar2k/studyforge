@@ -1,0 +1,136 @@
+<mat-card appearance="outlined">
+  <mat-card-header>
+    <mat-card-title>Schedule of Activities</mat-card-title>
+    <mat-card-subtitle>
+      Visits across the top, activities down the side. Click a cell to plan or unplan it.
+    </mat-card-subtitle>
+  </mat-card-header>
+
+  <mat-card-content>
+    <div class="toolbar">
+      <button mat-stroked-button type="button" (click)="showVisitForm.set(!showVisitForm())">
+        <mat-icon>{{ showVisitForm() ? 'close' : 'event' }}</mat-icon>
+        {{ showVisitForm() ? 'Cancel' : 'Add visit' }}
+      </button>
+      <form class="activity-form" (submit)="$event.preventDefault(); addActivity()">
+        <mat-form-field subscriptSizing="dynamic" class="activity-name">
+          <mat-label>New activity</mat-label>
+          <input matInput [formControl]="activityName" placeholder="e.g. ECG" autocomplete="off" />
+        </mat-form-field>
+        <button mat-stroked-button type="submit" [disabled]="busy()">
+          <mat-icon>add</mat-icon> Add activity
+        </button>
+      </form>
+    </div>
+
+    @if (showVisitForm()) {
+      <form class="visit-form" [formGroup]="visitForm" (ngSubmit)="addVisit()">
+        <mat-form-field subscriptSizing="dynamic">
+          <mat-label>Visit name</mat-label>
+          <input matInput formControlName="name" placeholder="e.g. Week 16" autocomplete="off" />
+        </mat-form-field>
+        <mat-form-field subscriptSizing="dynamic" class="num">
+          <mat-label>Study day</mat-label>
+          <input matInput type="number" formControlName="day" />
+          <mat-hint>Day 1 = first dose</mat-hint>
+        </mat-form-field>
+        <mat-form-field subscriptSizing="dynamic" class="num">
+          <mat-label>Days early</mat-label>
+          <input matInput type="number" min="0" max="90" formControlName="window_before" />
+        </mat-form-field>
+        <mat-form-field subscriptSizing="dynamic" class="num">
+          <mat-label>Days late</mat-label>
+          <input matInput type="number" min="0" max="90" formControlName="window_after" />
+        </mat-form-field>
+        <button mat-flat-button type="submit" [disabled]="busy()">Add visit</button>
+      </form>
+    }
+
+    @let s = schedule();
+    @if (loaded() && s.encounters.length === 0 && s.activities.length === 0) {
+      <p class="empty">
+        No visits or activities yet. Add a visit and an activity to start the grid.
+      </p>
+    } @else if (loaded()) {
+      <div class="grid-scroll" role="region" aria-label="Schedule of Activities grid" tabindex="0">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th scope="col" class="corner">Activity</th>
+              @for (e of s.encounters; track e.id) {
+                <th scope="col" class="visit">
+                  <div class="visit-head">
+                    <span class="visit-name">{{ e.name }}</span>
+                    <button
+                      mat-icon-button
+                      class="tiny"
+                      type="button"
+                      [matMenuTriggerFor]="visitMenu"
+                      [attr.aria-label]="'Options for ' + e.name"
+                    >
+                      <mat-icon>more_vert</mat-icon>
+                    </button>
+                    <mat-menu #visitMenu="matMenu">
+                      <button mat-menu-item (click)="deleteVisit(e)">
+                        <mat-icon>delete</mat-icon>
+                        <span>Delete {{ e.name }}</span>
+                      </button>
+                    </mat-menu>
+                  </div>
+                  <span class="visit-day">{{ timing(e) }}</span>
+                </th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (a of s.activities; track a.id) {
+              <tr>
+                <th scope="row" class="activity">
+                  <span class="activity-label">{{ a.name }}</span>
+                  <button
+                    mat-icon-button
+                    class="tiny remove"
+                    type="button"
+                    (click)="deleteActivity(a)"
+                    [attr.aria-label]="'Delete activity ' + a.name"
+                    matTooltip="Delete activity"
+                  >
+                    <mat-icon>close</mat-icon>
+                  </button>
+                </th>
+                @for (e of s.encounters; track e.id) {
+                  <td
+                    class="cell"
+                    [class.planned]="isPlanned(e, a)"
+                    [class.pending]="isPending(e, a)"
+                  >
+                    <label class="cell-hit">
+                      <input
+                        type="checkbox"
+                        [checked]="isPlanned(e, a)"
+                        [disabled]="isPending(e, a)"
+                        (change)="toggle(e, a)"
+                        [attr.aria-label]="a.name + ' at ' + e.name"
+                      />
+                      <mat-icon aria-hidden="true" class="tick">check</mat-icon>
+                    </label>
+                  </td>
+                }
+              </tr>
+            }
+          </tbody>
+          @if (s.encounters.length && s.activities.length) {
+            <tfoot>
+              <tr>
+                <th scope="row" class="activity total">Planned</th>
+                @for (e of s.encounters; track e.id) {
+                  <td class="total">{{ countByVisit().get(e.id) ?? 0 }}</td>
+                }
+              </tr>
+            </tfoot>
+          }
+        </table>
+      </div>
+    }
+  </mat-card-content>
+</mat-card>

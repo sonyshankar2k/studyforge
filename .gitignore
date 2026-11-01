@@ -11,6 +11,10 @@ node_modules/
 dist/
 .angular/
 
+# Playwright
+web/test-results/
+web/playwright-report/
+
 # Env & editor
 .env
 .DS_Store

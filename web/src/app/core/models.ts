@@ -1,6 +1,9 @@
 // API contracts. These mirror the Pydantic schemas in api/app/schemas.py.
 // (Week 3 idea: generate them from /openapi.json with openapi-typescript.)
 
+export type EntityType =
+  'study' | 'arm' | 'objective' | 'criterion' | 'encounter' | 'activity' | 'schedule';
+
 export type StudyPhase = 'Phase 1' | 'Phase 2' | 'Phase 3' | 'Phase 4';
 export type StudyStatus = 'draft' | 'in_review' | 'approved';
 export type ArmType = 'experimental' | 'active_comparator' | 'placebo';
@@ -44,9 +47,9 @@ export interface StudyDetail extends StudySummary {
 
 export interface AuditEntry {
   id: number;
-  entity_type: 'study' | 'arm' | 'objective';
+  entity_type: EntityType;
   entity_id: number;
-  action: 'create' | 'update' | 'delete';
+  action: 'create' | 'update' | 'delete' | 'reorder';
   changes: Record<string, unknown>;
   changed_by: string;
   changed_at: string;
@@ -61,7 +64,7 @@ export interface ConflictDetail {
 /** Event pushed over the WebSocket after someone saves. */
 export interface ChangeEvent {
   type: 'changed';
-  entity_type: 'study' | 'arm' | 'objective';
+  entity_type: EntityType;
   entity_id: number;
   action: 'create' | 'update' | 'delete';
   changed_by: string;
@@ -129,3 +132,49 @@ export interface JobEvent {
 }
 
 export type StudyEvent = ChangeEvent | JobEvent | { type: 'resync' };
+
+// ---------- Study design (Week 3) ----------
+export type CriterionCategory = 'inclusion' | 'exclusion';
+
+export interface Criterion {
+  id: number;
+  study_id: number;
+  category: CriterionCategory;
+  ordinal: number;
+  /** I1, I2... for inclusion; E1, E2... for exclusion. */
+  identifier: string;
+  text: string;
+  version: number;
+}
+
+export interface Encounter {
+  id: number;
+  study_id: number;
+  name: string;
+  /** Study day; Day 1 = first dose, so screening is negative. */
+  day: number;
+  window_before: number;
+  window_after: number;
+  version: number;
+}
+
+export type EncounterInput = Pick<Encounter, 'name' | 'day' | 'window_before' | 'window_after'>;
+
+export interface Activity {
+  id: number;
+  study_id: number;
+  name: string;
+  ordinal: number;
+  version: number;
+}
+
+export interface ScheduleCell {
+  encounter_id: number;
+  activity_id: number;
+}
+
+export interface Schedule {
+  encounters: Encounter[];
+  activities: Activity[];
+  cells: ScheduleCell[];
+}

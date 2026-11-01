@@ -17,6 +17,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSnackBar } from '@angular/material/snack-bar';
 
+import { apiErrorMessage } from '../core/api-errors';
 import { DigitizationJob, ExtractedArm } from '../core/models';
 import { StudiesApi } from '../core/studies-api';
 import { StatusLabelPipe } from './status-label.pipe';
@@ -230,8 +231,7 @@ export class DigitizePanel {
       },
       error: (err: HttpErrorResponse) => {
         this.applying.set(false);
-        const detail = typeof err.error?.detail === 'string' ? err.error.detail : null;
-        this.snack.open(detail ?? 'Could not add the items. Please try again.', 'OK', {
+        this.snack.open(apiErrorMessage(err, 'Could not add the items. Please try again.'), 'OK', {
           duration: 5000,
         });
         this.load(this.studyId());
@@ -271,9 +271,8 @@ export function defaultSelection(job: DigitizationJob): Selection {
 }
 
 function uploadMessage(err: HttpErrorResponse): string {
-  const detail = typeof err.error?.detail === 'string' ? err.error.detail : null;
   if (err.status === 413 || err.status === 415 || err.status === 422) {
-    return detail ?? 'This file cannot be processed.';
+    return apiErrorMessage(err, 'This file cannot be processed.');
   }
   return 'Upload failed. Press Start again to retry; it will not create a duplicate job.';
 }

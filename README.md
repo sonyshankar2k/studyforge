@@ -1,6 +1,6 @@
 # StudyForge
 
-**A collaborative clinical study design editor.** Teams build a clinical trial protocol together (study details, arms, objectives and endpoints) with live updates, conflict detection and a full audit trail. Upload a protocol PDF and AI proposes its arms, objectives and endpoints for you to review.
+**A collaborative clinical study design editor.** Teams build a clinical trial protocol together (study details, arms, objectives and endpoints) with live updates, conflict detection and a full audit trail. Upload a protocol PDF and AI proposes its arms, objectives and endpoints for you to review. Define eligibility criteria and the Schedule of Activities, and export the design as CDISC USDM-shaped JSON.
 
 Built with **Angular 22 · Python · FastAPI · PostgreSQL · Redis · arq · Claude · WebSockets · Docker**.
 
@@ -24,6 +24,9 @@ Built with **Angular 22 · Python · FastAPI · PostgreSQL · Redis · arq · Cl
 | **Long-running jobs** | Jobs run in a separate **arq** worker over **Redis**, with live progress on a progress bar, **cancel** (cooperative checkpoints plus task abort), automatic **retries with exponential backoff** for transient errors, immediate failure with a clear message for permanent ones, and a manual **Try again** |
 | **Idempotent uploads** | Each upload carries an `Idempotency-Key`; retrying after a network error returns the original job instead of starting (and paying for) a duplicate |
 | **Human in the loop** | AI output is only a proposal: a person reviews it, unticks anything wrong, and adds the rest. Each added item's audit entry records which file and job it came from |
+| **Eligibility criteria** | Inclusion / exclusion lists numbered I1, I2… / E1, E2…, kept gapless after deletes. Reorder by drag and drop (Angular CDK) or with move buttons that work from the keyboard; the new order shows at once and rolls back if the save fails |
+| **Schedule of Activities** | Visits (study day and visit window) across the top, activities down the side; click a cell to plan it. Optimistic updates with rollback, and the API takes the wanted state (`"planned": true`) rather than "toggle", so repeats are harmless. Other users' grids update live |
+| **USDM export** | Download the whole design as JSON using CDISC USDM entity names (StudyDesign, StudyArm, Objective, Endpoint, EligibilityCriterion, Encounter, Activity, ScheduleTimeline, ScheduledActivityInstance) |
 | **Scales across instances** | Live events go through Redis pub/sub, so the worker and any number of API instances can push updates to every open browser |
 
 ## Tech stack
@@ -31,6 +34,7 @@ Built with **Angular 22 · Python · FastAPI · PostgreSQL · Redis · arq · Cl
 - **Frontend:** Angular 22, standalone components, Signals, RxJS, typed Reactive Forms, functional guards and interceptors, Angular Material 3, Vitest
 - **Backend:** Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2.0 (async), Alembic, asyncpg, PyJWT, Argon2 (pwdlib), pytest
 - **Data and jobs:** PostgreSQL 17, Redis 8 (job queue + pub/sub), arq worker, pypdf, Anthropic SDK
+- **Testing:** pytest, Schemathesis (OpenAPI contract tests), Vitest, Playwright (end-to-end)
 - **Ops:** Docker Compose, nginx, GitHub Actions CI, Ruff, Prettier
 
 ---
@@ -66,6 +70,13 @@ Demo accounts (created automatically for local runs): `alice@studyforge.dev`, `b
 3. Watch the progress bar (open the same study in a second tab: it updates there too).
 4. Click **Review results**, untick anything you don't want, and click **Add … selected to the study**.
 5. Try **Cancel** while a job runs, then **Try again**.
+
+### Try the study design tools
+
+1. Open **BREATHE-1**. The demo study comes with criteria and a schedule.
+2. **Eligibility** tab: add a criterion, drag one to a new position, and watch the numbers update.
+3. **Schedule** tab: add a visit (e.g. *Week 16*, day *113*), tick some cells. Open the same study as Bob in another tab: his grid updates live.
+4. Click **Export USDM** to download the design as JSON.
 
 **Using Claude:** create a file named `.env` next to `docker-compose.yml` containing `ANTHROPIC_API_KEY=your-key`, then `docker compose up --build`. Without a key the rule-based parser is used, which only understands simple `Arm A: …` / `Primary objective: …` layouts like the sample.
 
@@ -120,12 +131,27 @@ cd api
 uv run pytest -v
 uv run ruff check .
 
-# Frontend (Vitest)
+# Frontend unit tests (Vitest)
 cd web
 npx ng test --watch=false
+
+# End-to-end tests (Playwright): start the stack first with `docker compose up -d --build`
+cd web
+npx playwright install chromium   # once
+npm run e2e
 ```
 
-CI runs on every push (`.github/workflows/ci.yml`): backend lint and tests, frontend tests and build, and a **migrations** job that applies the migrations to a real PostgreSQL, checks that the models and migrations match (`alembic check`), then downgrades and upgrades again.
+### What each kind of test catches
+
+| Tests | Where | What they prove |
+|---|---|---|
+| Unit + integration (pytest, Vitest) | `api/tests`, `web/src/**/*.spec.ts` | Business rules: versions and 409s, numbering, idempotency, retries, optimistic UI with rollback |
+| **Contract** (Schemathesis) | `api/tests/test_contract.py` | Generates hundreds of requests from `/openapi.json` (odd values, nulls, huge numbers…) and checks no request causes a 500 and every response matches the documented schema |
+| **End-to-end** (Playwright) | `web/e2e` | Real browser, real stack: sign-in, two users editing live, the conflict dialog, AI digitization, criteria reorder, live schedule updates, USDM download |
+
+The contract tests earned their place on day one. They found that timestamps lost their time zone on SQLite, that an id larger than 64 bits crashed the API, that `null` in a PATCH reached the database, and that some 422 errors didn't match the documented error shape. The end-to-end tests found two forms that reloaded the page instead of saving.
+
+CI runs on every push (`.github/workflows/ci.yml`): backend lint and tests (including contract tests), frontend tests and build, an **e2e** job that starts the whole stack in Docker and runs Playwright, and a **migrations** job that applies the migrations to a real PostgreSQL, checks that the models and migrations match (`alembic check`), then downgrades and upgrades again.
 
 ---
 
@@ -199,6 +225,8 @@ studyforge/
 │   │   ├── routers/auth.py   Register, login, me
 │   │   ├── routers/studies.py  REST endpoints (all require sign-in)
 │   │   ├── routers/jobs.py   Upload, job status, cancel, retry, apply
+│   │   ├── routers/design.py Criteria, visits, activities, schedule cells, USDM export
+│   │   ├── errors.py         422 errors in FastAPI's documented shape
 │   │   └── seed.py           Demo users and study
 │   ├── migrations/           Alembic migrations
 │   └── tests/                pytest
@@ -206,7 +234,8 @@ studyforge/
 │   └── src/app/
 │       ├── auth/             Sign-in / create-account page
 │       ├── core/             Auth service + guard + interceptor, API client, WebSocket, validators
-│       └── studies/          List page, detail page, AI digitize panel, dialogs
+│       └── studies/          List, detail, eligibility, schedule grid, AI digitize panel, dialogs
+│   └── e2e/                  Playwright end-to-end tests
 ├── samples/                  Fictional protocol PDF for the demo (+ the script that makes it)
 ├── docker-compose.yml        db, redis, api, worker, web
 └── .github/workflows/ci.yml
@@ -235,6 +264,14 @@ All `/api/studies`, `/api/arms` and `/api/objectives` endpoints require `Authori
 | POST | `/api/jobs/{id}/cancel` | Cancel a queued or running job |
 | POST | `/api/jobs/{id}/retry` | Re-run a failed or cancelled job |
 | POST | `/api/jobs/{id}/apply` | `{"arms": [0, 2], "objectives": [0]}`: add the reviewed items |
+| GET / POST | `/api/studies/{id}/criteria` | Eligibility criteria (I1…, E1…) |
+| PATCH / DELETE | `/api/criteria/{id}` | Delete renumbers the rest |
+| PUT | `/api/studies/{id}/criteria/order` | `{"category": "inclusion", "ids": [3, 1, 2]}`; 409 if the list changed meanwhile |
+| GET | `/api/studies/{id}/schedule` | Visits, activities and planned cells |
+| POST / PATCH / DELETE | `/api/studies/{id}/encounters`, `/api/encounters/{id}` | Visits (study day, window) |
+| POST / PATCH / DELETE | `/api/studies/{id}/activities`, `/api/activities/{id}` | Activities |
+| PUT | `/api/studies/{id}/schedule/cells` | `{"encounter_id": 1, "activity_id": 2, "planned": true}` (idempotent) |
+| GET | `/api/studies/{id}/usdm` | USDM-shaped JSON of the whole design |
 | WS | `/ws/studies/{id}?token=` | Change events and job progress for one study |
 
 ---
@@ -243,7 +280,7 @@ All `/api/studies`, `/api/arms` and `/api/objectives` endpoints require `Authori
 
 - [x] **Week 1:** JWT authentication · Alembic migrations
 - [x] **Week 2:** AI protocol digitization: background jobs (arq + Redis) with progress, retries, idempotency keys and cancellation; Claude extraction; review-before-apply; Redis pub/sub for live events
-- [ ] **Week 3:** Eligibility criteria and Schedule of Activities, aligned to the CDISC USDM model · Playwright end-to-end tests · contract tests against the OpenAPI spec
+- [x] **Week 3:** Eligibility criteria and Schedule of Activities (CDISC USDM entity names) · USDM export · Playwright end-to-end tests · Schemathesis contract tests
 - [ ] **Week 4:** Uploaded files to S3 · Terraform (S3, ECR) · Kubernetes manifests · OpenTelemetry tracing · SonarCloud quality gate
 
 *Demo data is fictional and for illustration only.*
