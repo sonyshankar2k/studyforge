@@ -22,6 +22,7 @@ import {
   ArmInput,
   AuditEntry,
   ConflictDetail,
+  DigitizationJob,
   Objective,
   ObjectiveInput,
   PHASES,
@@ -36,6 +37,7 @@ import { StudySocket } from '../core/study-socket';
 import { acronymAvailable } from '../core/validators';
 import { ArmDialog } from './arm-dialog';
 import { ConflictChoice, ConflictData, ConflictDialog } from './conflict-dialog';
+import { DigitizePanel } from './digitize-panel';
 import { ObjectiveDialog } from './objective-dialog';
 import { StatusLabelPipe } from './status-label.pipe';
 
@@ -73,6 +75,7 @@ type StudyChanges = Partial<StudyInput & { status: StudyStatus }>;
     MatTabsModule,
     MatTooltipModule,
     StatusLabelPipe,
+    DigitizePanel,
   ],
   templateUrl: './study-detail.html',
   styleUrl: './study-detail.scss',
@@ -94,6 +97,10 @@ export class StudyDetailPage {
   protected readonly loading = signal(true);
   protected readonly notFound = signal(false);
   protected readonly saving = signal(false);
+  /** Latest live job update, passed to the digitize panel. */
+  protected readonly jobUpdate = signal<DigitizationJob | null>(null);
+  /** Bumped after a WebSocket reconnect so child panels refetch too. */
+  protected readonly resyncs = signal(0);
   /** True when someone else saved the study while this user has unsaved edits. */
   protected readonly staleWhileEditing = signal(false);
 
@@ -123,6 +130,11 @@ export class StudyDetailPage {
       const sub = this.socket.watch(id).subscribe((event) => {
         if (event.type === 'resync') {
           this.reload(); // we may have missed events while offline
+          this.resyncs.update((n) => n + 1);
+          return;
+        }
+        if (event.type === 'job') {
+          this.jobUpdate.set(event.job); // live progress for the digitize panel
           return;
         }
         if (event.changed_by === this.auth.user()?.email) return; // our own save

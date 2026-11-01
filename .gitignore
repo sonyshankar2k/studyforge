@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.db
+uploads/
 
 # Node / Angular
 node_modules/
@@ -15,3 +16,4 @@ dist/
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+dump.rdb

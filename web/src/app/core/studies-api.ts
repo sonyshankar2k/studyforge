@@ -6,6 +6,7 @@ import {
   Arm,
   ArmInput,
   AuditEntry,
+  DigitizationJob,
   Objective,
   ObjectiveInput,
   StudyDetail,
@@ -78,5 +79,42 @@ export class StudiesApi {
 
   deleteObjective(id: number, version: number): Observable<void> {
     return this.http.delete<void>(`${this.base}/objectives/${id}`, { params: { version } });
+  }
+
+  // ---------- Protocol digitization ----------
+
+  /**
+   * Upload a protocol and start an AI extraction job.
+   * Pass the SAME idempotencyKey when retrying the same upload, so a retry after a
+   * network error returns the original job instead of starting (and paying for) a second one.
+   */
+  digitize(studyId: number, file: File, idempotencyKey: string): Observable<DigitizationJob> {
+    const body = new FormData();
+    body.append('file', file, file.name);
+    return this.http.post<DigitizationJob>(`${this.base}/studies/${studyId}/digitize`, body, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
+  }
+
+  listJobs(studyId: number): Observable<DigitizationJob[]> {
+    return this.http.get<DigitizationJob[]>(`${this.base}/studies/${studyId}/jobs`);
+  }
+
+  cancelJob(jobId: number): Observable<DigitizationJob> {
+    return this.http.post<DigitizationJob>(`${this.base}/jobs/${jobId}/cancel`, {});
+  }
+
+  retryJob(jobId: number): Observable<DigitizationJob> {
+    return this.http.post<DigitizationJob>(`${this.base}/jobs/${jobId}/retry`, {});
+  }
+
+  applyJob(
+    jobId: number,
+    selection: { arms: number[]; objectives: number[] },
+  ): Observable<{ arms_added: number; objectives_added: number }> {
+    return this.http.post<{ arms_added: number; objectives_added: number }>(
+      `${this.base}/jobs/${jobId}/apply`,
+      selection,
+    );
   }
 }

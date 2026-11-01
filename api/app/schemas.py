@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from app.models import ArmType, ObjectiveLevel, StudyPhase, StudyStatus
+from app.models import ArmType, JobStatus, ObjectiveLevel, StudyPhase, StudyStatus
 
 
 class ORMModel(BaseModel):
@@ -142,3 +142,35 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+# ---------- Protocol digitization ----------
+class JobOut(ORMModel):
+    id: int
+    study_id: int
+    created_by: str
+    filename: str
+    size_bytes: int
+    status: JobStatus
+    progress: int
+    stage: str
+    attempts: int
+    extractor: str | None
+    error: str | None
+    result: dict[str, Any] | None
+    created_at: datetime
+    updated_at: datetime
+    finished_at: datetime | None
+    applied_at: datetime | None
+
+
+class ApplyRequest(BaseModel):
+    """Which extracted items (by index in result.arms / result.objectives) to add."""
+
+    arms: list[int] = Field(default_factory=list)
+    objectives: list[int] = Field(default_factory=list)
+
+
+class ApplyResult(BaseModel):
+    arms_added: int
+    objectives_added: int
