@@ -5,11 +5,14 @@ __pycache__/
 .ruff_cache/
 *.db
 uploads/
+.coverage
+coverage.xml
 
 # Node / Angular
 node_modules/
 dist/
 .angular/
+web/coverage/
 
 # Playwright
 web/test-results/
@@ -21,3 +24,11 @@ web/playwright-report/
 .vscode/*
 !.vscode/extensions.json
 dump.rdb
+
+# Terraform / OpenTofu
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log

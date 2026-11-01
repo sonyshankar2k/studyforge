@@ -1,19 +1,25 @@
-FROM python:3.12-slim
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
+# syntax=docker/dockerfile:1
+# ---- build stage: resolve and install dependencies with uv ----
+FROM python:3.12-slim AS build
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 WORKDIR /app
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
-
-# Install dependencies first (cached layer), then copy the code
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
+# ---- runtime stage: no uv, no build tools, runs as a non-root user ----
+FROM python:3.12-slim
+RUN groupadd --system --gid 10001 app \
+ && useradd --system --uid 10001 --gid app --home-dir /app --no-create-home app \
+ && mkdir -p /data/uploads && chown app:app /data/uploads
+WORKDIR /app
+COPY --from=build /app/.venv /app/.venv
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY app ./app
-
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 UPLOAD_DIR=/data/uploads
+USER 10001
 EXPOSE 8000
-# Apply database migrations, then start the API.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Docker Compose: apply migrations, then start. On Kubernetes, a separate Job
+# runs the migrations and the Deployment runs only uvicorn (see k8s/).
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"]

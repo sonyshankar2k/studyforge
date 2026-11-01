@@ -2,7 +2,7 @@
 
 Run locally:   uv run alembic upgrade head      (create/upgrade the database schema)
                uv run fastapi dev app/main.py
-               uv run arq app.worker.WorkerSettings   (background worker, needs Redis)
+               uv run python -m app.worker          (background worker, needs Redis)
 API docs:      http://localhost:8000/docs        (auto-generated from the code)
 """
 
@@ -24,6 +24,7 @@ from app.realtime import hub
 from app.routers import auth, design, jobs, studies
 from app.security import decode_access_token
 from app.seed import seed_demo_data
+from app.telemetry import setup_telemetry
 
 log = logging.getLogger(__name__)
 
@@ -62,9 +63,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="StudyForge API",
     description="Collaborative clinical study design editor",
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
+setup_telemetry(app=app, engine=engine)
 
 app.add_middleware(
     CORSMiddleware,

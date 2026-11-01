@@ -1,0 +1,29 @@
+# One host: /api and /ws go straight to the API, everything else to the web app.
+# Default: ingress-nginx. The aws overlay switches to an AWS Application Load Balancer.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: studyforge
+  annotations:
+    # WebSockets (live job progress and co-editing) stay open for up to an hour.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 12m
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: studyforge.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service: { name: api, port: { name: http } }
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service: { name: api, port: { name: http } }
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: web, port: { name: http } }

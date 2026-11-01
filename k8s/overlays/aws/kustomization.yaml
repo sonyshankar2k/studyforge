@@ -1,0 +1,46 @@
+# EKS: images from ECR, uploads in the Terraform-managed S3 bucket (via IRSA),
+# an AWS Application Load Balancer in front. Fill in the values from
+# `terraform output` (infra/terraform), then:  kubectl apply -k k8s/overlays/aws
+# The deploy workflow sets the image tags to the git SHA (kustomize edit set image).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - name: studyforge-api
+    newName: 123456789012.dkr.ecr.us-east-1.amazonaws.com/studyforge/api
+    newTag: "0.5.0"
+  - name: studyforge-web
+    newName: 123456789012.dkr.ecr.us-east-1.amazonaws.com/studyforge/web
+    newTag: "0.5.0"
+patches:
+  - target: { kind: ServiceAccount, name: studyforge-api }
+    patch: |
+      - op: add
+        path: /metadata/annotations
+        value:
+          eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/studyforge-dev-app
+  - target: { kind: ConfigMap, name: studyforge-config }
+    patch: |
+      - op: replace
+        path: /data/S3_BUCKET
+        value: studyforge-dev-uploads-123456789012
+      - op: replace
+        path: /data/SEED_DEMO_DATA
+        value: "false"
+  - target: { kind: Ingress, name: studyforge }
+    patch: |
+      - op: replace
+        path: /spec/ingressClassName
+        value: alb
+      - op: replace
+        path: /metadata/annotations
+        value:
+          alb.ingress.kubernetes.io/scheme: internet-facing
+          alb.ingress.kubernetes.io/target-type: ip
+          alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+          alb.ingress.kubernetes.io/ssl-redirect: "443"
+          alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:123456789012:certificate/replace-me
+          # Keep WebSockets open (ALB default idle timeout is 60s).
+          alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=3600
+          alb.ingress.kubernetes.io/healthcheck-path: /api/health
