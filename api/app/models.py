@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -106,6 +106,64 @@ class Objective(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     study: Mapped[Study] = relationship(back_populates="objectives")
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+TERMINAL_STATUSES = {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}
+
+
+class DigitizationJob(Base):
+    """One "read this protocol with AI" request, processed by the background worker.
+
+    Lifecycle: queued -> running -> succeeded | failed | cancelled.
+    The extracted result is only a *proposal*: nothing reaches the study until a
+    person reviews it and applies it (human in the loop, required for GxP work).
+    """
+
+    __tablename__ = "digitization_job"
+    __table_args__ = (
+        # Same user + same Idempotency-Key = same job. Makes upload retries safe.
+        UniqueConstraint("created_by_id", "idempotency_key", name="uq_job_idempotency"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("study.id", ondelete="CASCADE"), index=True)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"))
+    created_by: Mapped[str] = mapped_column(String(254))  # email, for display and audit
+    idempotency_key: Mapped[str] = mapped_column(String(100))
+
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(100))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    storage_key: Mapped[str] = mapped_column(String(255))
+
+    status: Mapped[str] = mapped_column(String(20), default=JobStatus.QUEUED, index=True)
+    progress: Mapped[int] = mapped_column(Integer, default=0)  # 0-100
+    stage: Mapped[str] = mapped_column(String(200), default="Waiting for a worker")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    runs: Mapped[int] = mapped_column(Integer, default=1)  # bumps on manual retry
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    extractor: Mapped[str | None] = mapped_column(String(50))
+    error: Mapped[str | None] = mapped_column(Text)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in TERMINAL_STATUSES
 
 
 class AuditLog(Base):

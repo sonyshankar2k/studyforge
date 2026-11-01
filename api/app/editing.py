@@ -10,8 +10,8 @@ from fastapi import HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.events import get_bus
 from app.models import AuditLog
-from app.realtime import hub
 
 
 def to_dict(obj: Any, fields: list[str]) -> dict[str, Any]:
@@ -73,7 +73,7 @@ def record_audit(
 
 
 async def notify(study_id: int, entity_type: str, entity_id: int, action: str, user: str) -> None:
-    await hub.broadcast(
+    await get_bus().publish(
         study_id,
         {
             "type": "changed",

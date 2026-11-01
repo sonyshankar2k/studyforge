@@ -10,6 +10,11 @@ const LABELS: Record<string, string> = {
   primary: 'Primary',
   secondary: 'Secondary',
   exploratory: 'Exploratory',
+  queued: 'Queued',
+  running: 'Running',
+  succeeded: 'Done',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
 };
 
 /** Turns API enum values ("in_review") into readable labels ("In review"). */

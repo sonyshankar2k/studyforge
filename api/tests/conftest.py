@@ -10,6 +10,9 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["SEED_DEMO_DATA"] = "false"
+os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"  # nothing listens here: in-process events
+os.environ["EXTRACTOR"] = "rules"
+os.environ["JOB_STAGE_DELAY_SECONDS"] = "0"
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -20,12 +23,45 @@ from app import db as app_db  # noqa: E402
 from app import main as app_main  # noqa: E402
 from app.db import Base, get_session  # noqa: E402
 from app.main import app  # noqa: E402
+from app.queue import get_queue  # noqa: E402
+from app.storage import LocalStorage, get_storage  # noqa: E402
 
 TEST_PASSWORD = "correct-horse-battery"
 
 
+class FakeQueue:
+    """Records what the API asked the worker to do, instead of using Redis."""
+
+    def __init__(self) -> None:
+        self.enqueued: list[tuple[int, int]] = []
+        self.aborted: list[tuple[int, int]] = []
+        self.fail = False
+
+    async def enqueue(self, job_id: int, run: int) -> None:
+        if self.fail:
+            raise ConnectionError("redis down")
+        self.enqueued.append((job_id, run))
+
+    async def abort(self, job_id: int, run: int) -> None:
+        self.aborted.append((job_id, run))
+
+
 @pytest.fixture
-async def session_factory(monkeypatch):
+def queue() -> FakeQueue:
+    q = FakeQueue()
+    app.dependency_overrides[get_queue] = lambda: q
+    return q
+
+
+@pytest.fixture
+def storage(tmp_path) -> LocalStorage:
+    s = LocalStorage(tmp_path / "uploads")
+    app.dependency_overrides[get_storage] = lambda: s
+    return s
+
+
+@pytest.fixture
+async def session_factory(monkeypatch, queue, storage):
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},

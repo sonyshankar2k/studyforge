@@ -2,21 +2,43 @@
 
 Run locally:   uv run alembic upgrade head      (create/upgrade the database schema)
                uv run fastapi dev app/main.py
+               uv run arq app.worker.WorkerSettings   (background worker, needs Redis)
 API docs:      http://localhost:8000/docs        (auto-generated from the code)
 """
 
+import asyncio
+import contextlib
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from redis.asyncio import Redis
 
 from app.config import settings
 from app.db import SessionLocal, engine
+from app.events import RedisEventBus, forward_redis_events, set_bus
 from app.models import User
+from app.queue import _queue
 from app.realtime import hub
-from app.routers import auth, studies
+from app.routers import auth, jobs, studies
 from app.security import decode_access_token
 from app.seed import seed_demo_data
+
+log = logging.getLogger(__name__)
+
+
+async def _connect_event_bus() -> tuple[Redis | None, asyncio.Task | None]:
+    """Use Redis for live events when it's reachable; otherwise stay single-process."""
+    redis = Redis.from_url(settings.redis_url)
+    try:
+        await asyncio.wait_for(redis.ping(), timeout=2)
+    except Exception:
+        log.warning("Redis not reachable at %s: live events stay in-process", settings.redis_url)
+        await redis.aclose()
+        return None, None
+    set_bus(RedisEventBus(redis))
+    return redis, asyncio.create_task(forward_redis_events(redis))
 
 
 @asynccontextmanager
@@ -25,14 +47,22 @@ async def lifespan(app: FastAPI):
     if settings.seed_demo_data:
         async with SessionLocal() as session:
             await seed_demo_data(session)
+    redis, forwarder = await _connect_event_bus()
     yield
+    if forwarder:
+        forwarder.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await forwarder
+    if redis:
+        await redis.aclose()
+    await _queue.close()
     await engine.dispose()
 
 
 app = FastAPI(
     title="StudyForge API",
     description="Collaborative clinical study design editor",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -45,6 +75,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(studies.router)
+app.include_router(jobs.router)
 
 
 @app.get("/api/health", tags=["ops"])
