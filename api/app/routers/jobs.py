@@ -19,9 +19,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
-from app.deps import CurrentUserDep, SessionDep, current_user
+from app.deps import CurrentUserDep, Id, SessionDep, current_user
 from app.digitize.pipeline import job_event
 from app.editing import notify, record_audit, to_dict
+from app.errors import unprocessable
 from app.events import get_bus
 from app.models import Arm, DigitizationJob, JobStatus, Objective, Study
 from app.queue import JobQueue, get_queue
@@ -40,7 +41,7 @@ ALLOWED_TYPES = {"application/pdf": ".pdf", "text/plain": ".txt"}
 PDF_MAGIC = b"%PDF-"
 
 
-async def _get_job(session, job_id: int) -> DigitizationJob:
+async def _get_job(session, job_id: Id) -> DigitizationJob:
     job = await session.get(DigitizationJob, job_id)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Job {job_id} not found")
@@ -74,7 +75,7 @@ def _detect_type(upload: UploadFile, head: bytes) -> str:
     responses={200: {"description": "Same Idempotency-Key as an earlier upload: that job"}},
 )
 async def start_digitization(
-    study_id: int,
+    study_id: Id,
     file: Annotated[UploadFile, File(description="Protocol PDF or .txt")],
     idempotency_key: Annotated[str, Header(min_length=8, max_length=100)],
     response: Response,
@@ -103,7 +104,7 @@ async def start_digitization(
             status.HTTP_413_CONTENT_TOO_LARGE, f"File is larger than {settings.max_upload_mb} MB."
         )
     if not data:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "The file is empty.")
+        raise unprocessable("The file is empty.", "file")
     content_type = _detect_type(file, data[:1024])
 
     key = await storage.save(data, ALLOWED_TYPES[content_type])
@@ -151,19 +152,16 @@ async def _find_by_key(session, user_id: int, key: str) -> DigitizationJob | Non
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-def _replay(job: DigitizationJob, study_id: int, response: Response) -> DigitizationJob:
+def _replay(job: DigitizationJob, study_id: Id, response: Response) -> DigitizationJob:
     if job.study_id != study_id:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "This Idempotency-Key was already used for a different study.",
-        )
+        raise unprocessable("This Idempotency-Key was already used for a different study.")
     response.status_code = status.HTTP_200_OK
     response.headers["Idempotent-Replayed"] = "true"
     return job
 
 
 @router.get("/studies/{study_id}/jobs", response_model=list[JobOut])
-async def list_jobs(study_id: int, session: SessionDep):
+async def list_jobs(study_id: Id, session: SessionDep):
     stmt = (
         select(DigitizationJob)
         .where(DigitizationJob.study_id == study_id)
@@ -174,12 +172,12 @@ async def list_jobs(study_id: int, session: SessionDep):
 
 
 @router.get("/jobs/{job_id}", response_model=JobOut)
-async def get_job(job_id: int, session: SessionDep):
+async def get_job(job_id: Id, session: SessionDep):
     return await _get_job(session, job_id)
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobOut)
-async def cancel_job(job_id: int, session: SessionDep, queue: QueueDep):
+async def cancel_job(job_id: Id, session: SessionDep, queue: QueueDep):
     job = await _get_job(session, job_id)
     if job.is_terminal:
         raise HTTPException(status.HTTP_409_CONFLICT, f"The job has already {job.status}.")
@@ -206,7 +204,7 @@ async def cancel_job(job_id: int, session: SessionDep, queue: QueueDep):
 
 
 @router.post("/jobs/{job_id}/retry", response_model=JobOut, status_code=status.HTTP_202_ACCEPTED)
-async def retry_job(job_id: int, session: SessionDep, queue: QueueDep):
+async def retry_job(job_id: Id, session: SessionDep, queue: QueueDep):
     job = await _get_job(session, job_id)
     if job.status not in (JobStatus.FAILED, JobStatus.CANCELLED):
         raise HTTPException(
@@ -238,7 +236,7 @@ async def retry_job(job_id: int, session: SessionDep, queue: QueueDep):
 
 
 @router.post("/jobs/{job_id}/apply", response_model=ApplyResult)
-async def apply_job(job_id: int, body: ApplyRequest, session: SessionDep, user: CurrentUserDep):
+async def apply_job(job_id: Id, body: ApplyRequest, session: SessionDep, user: CurrentUserDep):
     """Add the items a person selected after reviewing the AI's proposal."""
     job = await _get_job(session, job_id)
     if job.status != JobStatus.SUCCEEDED or not job.result:
@@ -246,7 +244,7 @@ async def apply_job(job_id: int, body: ApplyRequest, session: SessionDep, user: 
     if job.applied_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "These results were already added.")
     if not body.arms and not body.objectives:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Select at least one item.")
+        raise unprocessable("Select at least one item.")
 
     proposed_arms = job.result.get("arms", [])
     proposed_objectives = job.result.get("objectives", [])
@@ -261,7 +259,7 @@ async def apply_job(job_id: int, body: ApplyRequest, session: SessionDep, user: 
             )
     except ValidationError as exc:
         reason = exc.errors()[0]["msg"].removeprefix("Value error, ")
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, reason) from None
+        raise unprocessable(reason) from None
 
     source = f"AI extraction from {job.filename} (job {job.id})"
     for arm_in in arms:
@@ -302,5 +300,5 @@ async def apply_job(job_id: int, body: ApplyRequest, session: SessionDep, user: 
 
 def _pick(items: list, index: int, kind: str) -> dict:
     if not 0 <= index < len(items):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"No extracted {kind} #{index}")
+        raise unprocessable(f"No extracted {kind} #{index}")
     return items[index]

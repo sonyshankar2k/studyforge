@@ -25,6 +25,14 @@
   color: var(--mat-sys-primary);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .live {
   display: inline-flex;
   align-items: center;

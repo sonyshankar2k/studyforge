@@ -26,6 +26,7 @@ dev = [
     "pytest-asyncio>=1.4.1",
     "reportlab>=5.1.0",
     "ruff>=0.17.3",
+    "schemathesis>=4.32.7",
 ]
 
 [tool.pytest.ini_options]

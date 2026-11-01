@@ -1,0 +1,129 @@
+<div class="sections">
+  @for (section of sections; track section.category) {
+    @let items = byCategory()[section.category];
+    <mat-card appearance="outlined" class="section" [attr.data-category]="section.category">
+      <mat-card-header>
+        <mat-card-title>{{ section.title }} ({{ items.length }})</mat-card-title>
+        <mat-card-subtitle>{{ section.hint }}</mat-card-subtitle>
+      </mat-card-header>
+
+      <mat-card-content>
+        @if (loaded() && items.length === 0) {
+          <p class="empty">None yet.</p>
+        }
+        <ol
+          class="criteria"
+          cdkDropList
+          [cdkDropListData]="items"
+          (cdkDropListDropped)="drop(section.category, $event)"
+          [attr.aria-label]="section.title"
+        >
+          @for (
+            item of items;
+            track item.id;
+            let i = $index;
+            let first = $first;
+            let last = $last
+          ) {
+            <li class="criterion" cdkDrag [cdkDragDisabled]="editingId() !== null">
+              <button
+                mat-icon-button
+                cdkDragHandle
+                class="handle"
+                type="button"
+                tabindex="-1"
+                aria-hidden="true"
+                matTooltip="Drag to reorder"
+              >
+                <mat-icon>drag_indicator</mat-icon>
+              </button>
+              <span class="identifier">{{ item.identifier }}</span>
+
+              @if (editingId() === item.id) {
+                <div class="edit">
+                  <mat-form-field subscriptSizing="dynamic">
+                    <mat-label>{{ item.identifier }}</mat-label>
+                    <textarea matInput rows="2" [formControl]="editText" cdkFocusInitial></textarea>
+                    <mat-error>At least 3 characters</mat-error>
+                  </mat-form-field>
+                  <div class="edit-actions">
+                    <button mat-button type="button" (click)="editingId.set(null)">Cancel</button>
+                    <button
+                      mat-flat-button
+                      type="button"
+                      (click)="saveEdit(item)"
+                      [disabled]="editText.invalid || busy()"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              } @else {
+                <span class="text">{{ item.text }}</span>
+                <div class="actions">
+                  <button
+                    mat-icon-button
+                    type="button"
+                    (click)="move(section.category, i, -1)"
+                    [disabled]="first"
+                    [attr.aria-label]="'Move ' + item.identifier + ' up'"
+                    matTooltip="Move up"
+                  >
+                    <mat-icon>arrow_upward</mat-icon>
+                  </button>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    (click)="move(section.category, i, 1)"
+                    [disabled]="last"
+                    [attr.aria-label]="'Move ' + item.identifier + ' down'"
+                    matTooltip="Move down"
+                  >
+                    <mat-icon>arrow_downward</mat-icon>
+                  </button>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    (click)="startEdit(item)"
+                    [attr.aria-label]="'Edit ' + item.identifier"
+                    matTooltip="Edit"
+                  >
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                  <button
+                    mat-icon-button
+                    type="button"
+                    (click)="remove(item)"
+                    [disabled]="busy()"
+                    [attr.aria-label]="'Delete ' + item.identifier"
+                    matTooltip="Delete"
+                  >
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </div>
+              }
+            </li>
+          }
+        </ol>
+
+        <!-- (submit) + preventDefault: there is no [formGroup] here, so Angular's ngSubmit
+             would never fire and the browser would reload the page. -->
+        <form class="add" (submit)="$event.preventDefault(); add(section.category)">
+          <mat-form-field subscriptSizing="dynamic">
+            <mat-label>Add {{ section.category }} criterion</mat-label>
+            <textarea
+              matInput
+              rows="1"
+              [formControl]="addForms[section.category]"
+              (keydown.enter)="$event.preventDefault(); add(section.category)"
+            ></textarea>
+            <mat-error>At least 3 characters</mat-error>
+          </mat-form-field>
+          <button mat-stroked-button type="submit" [disabled]="busy()">
+            <mat-icon>add</mat-icon> Add
+          </button>
+        </form>
+      </mat-card-content>
+    </mat-card>
+  }
+</div>

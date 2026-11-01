@@ -108,6 +108,74 @@ class Objective(Base):
     study: Mapped[Study] = relationship(back_populates="objectives")
 
 
+# ----------------------------------------------------------------- Week 3: study design
+# Names follow CDISC USDM entities: EligibilityCriterion, Encounter, Activity,
+# ScheduledActivityInstance (here one row per planned visit x activity cell).
+
+
+class CriterionCategory(StrEnum):
+    INCLUSION = "inclusion"
+    EXCLUSION = "exclusion"
+
+
+class EligibilityCriterion(Base):
+    """One inclusion or exclusion criterion. `ordinal` gives its number: I1, I2... / E1, E2..."""
+
+    __tablename__ = "eligibility_criterion"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("study.id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(String(20))
+    ordinal: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+    @property
+    def identifier(self) -> str:
+        prefix = "I" if self.category == CriterionCategory.INCLUSION else "E"
+        return f"{prefix}{self.ordinal}"
+
+
+class Encounter(Base):
+    """A planned visit, placed on the study timeline by its study day (Day 1 = first dose)."""
+
+    __tablename__ = "encounter"
+    __table_args__ = (UniqueConstraint("study_id", "name", name="uq_encounter_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("study.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    day: Mapped[int] = mapped_column(Integer)
+    window_before: Mapped[int] = mapped_column(Integer, default=0)  # allowed days early
+    window_after: Mapped[int] = mapped_column(Integer, default=0)  # allowed days late
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class Activity(Base):
+    """Something done at visits: a procedure, assessment or sample (a row of the grid)."""
+
+    __tablename__ = "activity"
+    __table_args__ = (UniqueConstraint("study_id", "name", name="uq_activity_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("study.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    ordinal: Mapped[int] = mapped_column(Integer)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class ScheduledActivity(Base):
+    """A ticked cell in the Schedule of Activities: this activity happens at this visit."""
+
+    __tablename__ = "scheduled_activity"
+    __table_args__ = (UniqueConstraint("encounter_id", "activity_id", name="uq_schedule_cell"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("study.id", ondelete="CASCADE"), index=True)
+    encounter_id: Mapped[int] = mapped_column(ForeignKey("encounter.id", ondelete="CASCADE"))
+    activity_id: Mapped[int] = mapped_column(ForeignKey("activity.id", ondelete="CASCADE"))
+
+
 class JobStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"

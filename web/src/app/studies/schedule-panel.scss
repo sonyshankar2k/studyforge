@@ -1,0 +1,199 @@
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+
+.activity-form,
+.visit-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.activity-name {
+  width: 220px;
+}
+
+.visit-form {
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: var(--mat-sys-surface-container-low);
+
+  .num {
+    width: 120px;
+  }
+}
+
+.grid-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 12px;
+
+  &:focus-visible {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: 2px;
+  }
+}
+
+.grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  font: var(--mat-sys-body-medium);
+
+  th,
+  td {
+    border-bottom: 1px solid var(--mat-sys-outline-variant);
+    border-right: 1px solid var(--mat-sys-outline-variant);
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--mat-sys-surface-container);
+    z-index: 1;
+  }
+}
+
+// First column stays visible while scrolling sideways through visits.
+.corner,
+.activity {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--mat-sys-surface-container);
+  text-align: left;
+  min-width: 180px;
+}
+
+.corner {
+  font: var(--mat-sys-label-large);
+  padding: 8px 12px;
+}
+
+.activity {
+  font-weight: 500;
+  padding: 0 4px 0 12px;
+
+  .activity-label {
+    display: inline-block;
+    padding: 10px 0;
+  }
+
+  .remove {
+    float: right;
+    opacity: 0;
+  }
+
+  &:hover .remove,
+  &:focus-within .remove {
+    opacity: 1;
+  }
+}
+
+.visit {
+  min-width: 96px;
+  padding: 6px 4px 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.visit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+}
+
+.visit-name {
+  font: var(--mat-sys-label-large);
+  white-space: nowrap;
+}
+
+.visit-day {
+  font: var(--mat-sys-body-small);
+  color: var(--mat-sys-on-surface-variant);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tiny {
+  --mat-icon-button-state-layer-size: 28px;
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.cell {
+  padding: 0;
+  text-align: center;
+
+  &.planned {
+    background: var(--mat-sys-primary-container);
+  }
+
+  &.pending {
+    opacity: 0.6;
+  }
+}
+
+// The whole cell is the click target; the real checkbox stays for keyboard and screen readers.
+.cell-hit {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  cursor: pointer;
+
+  input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .tick {
+    color: var(--mat-sys-on-primary-container);
+    visibility: hidden;
+  }
+
+  input:checked + .tick {
+    visibility: visible;
+  }
+
+  &:hover {
+    background: var(--mat-sys-surface-container-high);
+  }
+
+  &:focus-within {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: -2px;
+  }
+}
+
+.total {
+  font: var(--mat-sys-label-medium);
+  color: var(--mat-sys-on-surface-variant);
+  text-align: center;
+  padding: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+th.total {
+  text-align: left;
+  padding-left: 12px;
+}
