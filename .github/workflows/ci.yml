@@ -25,7 +25,7 @@ jobs:
         run: |
           uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt
           uvx pip-audit -r /tmp/requirements.txt --disable-pip --require-hashes --progress-spinner off
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: api-coverage
           path: api/coverage.xml
@@ -83,7 +83,7 @@ jobs:
         run: npx ng build
       # lcov paths are relative to web/; SonarQube Cloud resolves them from the repo root.
       - run: sed -i 's#^SF:#SF:web/#' coverage/web/lcov.info
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-coverage
           path: web/coverage/web/lcov.info
@@ -181,7 +181,7 @@ jobs:
         run: docker compose logs --no-color --tail 200
       - name: Upload the Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: web/playwright-report
