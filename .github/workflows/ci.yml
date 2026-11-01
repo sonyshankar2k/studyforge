@@ -17,10 +17,19 @@ jobs:
       - run: uv sync
       - name: Lint
         run: uv run ruff check . && uv run ruff format --check .
-      - name: Test (unit, integration and OpenAPI contract tests)
+      - name: Test (unit, integration and OpenAPI contract tests) with coverage
         env:
           CONTRACT_EXAMPLES: "40"
-        run: uv run pytest -q
+        run: uv run pytest -q --cov --cov-report=xml --cov-report=term
+      - name: Audit dependencies for known vulnerabilities
+        run: |
+          uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt
+          uvx pip-audit -r /tmp/requirements.txt --disable-pip --require-hashes --progress-spinner off
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage
+          path: api/coverage.xml
+          retention-days: 3
 
   # Applies the migrations to a real PostgreSQL and fails if the models
   # have changes that no migration covers.
@@ -66,10 +75,84 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
-      - name: Test
-        run: npx ng test --watch=false
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Test with coverage
+        run: npx ng test --watch=false --coverage --coverage-reporters=lcov --coverage-reporters=text-summary
       - name: Build
         run: npx ng build
+      # lcov paths are relative to web/; SonarQube Cloud resolves them from the repo root.
+      - run: sed -i 's#^SF:#SF:web/#' coverage/web/lcov.info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-coverage
+          path: web/coverage/web/lcov.info
+          retention-days: 3
+
+  # Terraform and Kubernetes: formatted, valid against the AWS provider and the
+  # Kubernetes API schemas, and free of security misconfigurations (checkov).
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: "~1.10.0"
+          tofu_wrapper: false
+      - name: Terraform format
+        working-directory: infra/terraform
+        run: tofu fmt -check -recursive -diff
+      - name: Terraform validate
+        working-directory: infra/terraform
+        run: tofu init -backend=false -input=false && tofu validate
+      - name: Install kubeconform
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C "$HOME/bin" kubeconform
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: Render and validate Kubernetes manifests
+        run: |
+          mkdir -p rendered
+          for overlay in dev aws; do
+            kubectl kustomize k8s/overlays/$overlay > rendered/$overlay.yaml
+          done
+          kubeconform -strict -summary -kubernetes-version 1.34.0 \
+            -schema-location 'https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/{{.NormalizedKubernetesVersion}}-standalone-strict/{{.ResourceKind}}{{.KindSuffix}}.json' \
+            rendered/*.yaml
+      - name: Security scan (checkov)
+        run: |
+          pipx install checkov
+          checkov -d infra/terraform --framework terraform --config-file .checkov.yaml
+          checkov -d rendered --framework kubernetes --config-file .checkov.yaml
+
+  # SonarQube Cloud: runs when the SONAR_TOKEN secret is set (see README, Week 4).
+  sonar:
+    runs-on: ubuntu-latest
+    needs: [api, web]
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.SONAR_TOKEN != ''
+        with:
+          fetch-depth: 0 # full history: blame data and new-code detection
+      - uses: actions/download-artifact@v4
+        if: env.SONAR_TOKEN != ''
+        with:
+          name: api-coverage
+          path: api
+      - uses: actions/download-artifact@v4
+        if: env.SONAR_TOKEN != ''
+        with:
+          name: web-coverage
+          path: web/coverage/web
+      - name: Scan and wait for the quality gate
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@v6
+      - name: Skipped
+        if: env.SONAR_TOKEN == ''
+        run: echo "SONAR_TOKEN is not set, so the SonarQube Cloud scan was skipped."
 
   # The whole stack in Docker, driven by a real browser (Playwright).
   e2e:

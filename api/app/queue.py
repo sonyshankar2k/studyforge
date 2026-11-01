@@ -5,6 +5,7 @@ from typing import Protocol
 from arq import ArqRedis, create_pool
 from arq.connections import RedisSettings
 from arq.jobs import Job
+from opentelemetry import propagate
 
 from app.config import settings
 
@@ -30,7 +31,13 @@ class ArqQueue:
 
     async def enqueue(self, job_id: int, run: int) -> None:
         pool = await self._get_pool()
-        await pool.enqueue_job("digitize_protocol", job_id, _job_id=arq_job_id(job_id, run))
+        # Pass the current trace along (W3C traceparent), so the worker's span joins
+        # the upload request's trace: one trace from "user clicked Start" to "done".
+        trace_context: dict[str, str] = {}
+        propagate.inject(trace_context)
+        await pool.enqueue_job(
+            "digitize_protocol", job_id, trace_context, _job_id=arq_job_id(job_id, run)
+        )
 
     async def abort(self, job_id: int, run: int) -> None:
         pool = await self._get_pool()

@@ -1,0 +1,82 @@
+# Build the images, push them to Amazon ECR, and (optionally) roll them out to EKS.
+#
+# Off until you opt in: set these repository variables (Settings > Secrets and
+# variables > Actions > Variables), using the values from `terraform output`:
+#   AWS_ROLE_ARN      ci_role_arn       (GitHub OIDC: no AWS keys stored in GitHub)
+#   AWS_REGION        e.g. us-east-1
+#   EKS_CLUSTER_NAME  eks_cluster_name  (optional: also deploy to the cluster)
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # to request the GitHub OIDC token
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Only after a green CI run on main (or a manual run), and only once configured.
+    if: >-
+      vars.AWS_ROLE_ARN != '' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and push the API image
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/studyforge/api:${{ env.TAG }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Build and push the web image
+        uses: docker/build-push-action@v6
+        with:
+          context: web
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/studyforge/web:${{ env.TAG }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - name: Roll out to EKS
+        if: vars.EKS_CLUSTER_NAME != ''
+        working-directory: k8s/overlays/aws
+        run: |
+          aws eks update-kubeconfig --name "${{ vars.EKS_CLUSTER_NAME }}" --region "$AWS_REGION"
+          kustomize edit set image \
+            "studyforge-api=${{ steps.ecr.outputs.registry }}/studyforge/api:$TAG" \
+            "studyforge-web=${{ steps.ecr.outputs.registry }}/studyforge/web:$TAG"
+          kustomize build . > /tmp/release.yaml
+          # 1. Namespace, config, services, ingress, autoscaling, network policies.
+          kubectl apply -f /tmp/release.yaml -l '!app.kubernetes.io/component'
+          # 2. Database migrations, before any new code runs. (A Job is immutable: replace it.)
+          kubectl -n studyforge delete job studyforge-migrate --ignore-not-found
+          kubectl apply -f /tmp/release.yaml -l app.kubernetes.io/component=migration
+          kubectl -n studyforge wait --for=condition=complete job/studyforge-migrate --timeout=300s
+          # 3. The new API, worker and web pods (rolling, zero downtime).
+          kubectl apply -f /tmp/release.yaml -l app.kubernetes.io/component=server
+          kubectl -n studyforge rollout status deployment/api --timeout=300s
+          kubectl -n studyforge rollout status deployment/worker --timeout=300s
+          kubectl -n studyforge rollout status deployment/web --timeout=300s

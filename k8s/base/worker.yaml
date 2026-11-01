@@ -1,0 +1,68 @@
+# Background worker for AI digitization jobs: same image as the API, different command.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker
+    spec:
+      serviceAccountName: studyforge-api
+      automountServiceAccountToken: false
+      # Let a running job finish (arq stops taking new jobs on SIGTERM).
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: studyforge-api
+          command: ["python", "-m", "app.worker"]
+          envFrom:
+            - configMapRef:
+                name: studyforge-config
+            - secretRef:
+                name: studyforge-secrets
+          env:
+            - name: SERVICE_NAME
+              value: studyforge-worker
+          # arq writes a health record to Redis; --check exits non-zero when it is stale.
+          livenessProbe:
+            exec:
+              command: ["arq", "--check", "app.worker.WorkerSettings"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["arq", "--check", "app.worker.WorkerSettings"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 192Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
