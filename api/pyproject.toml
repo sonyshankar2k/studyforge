@@ -18,7 +18,7 @@ dependencies = [
     "pydantic-settings>=2.16.2",
     "pyjwt>=2.15.1",
     "pypdf>=6.21.4",
-    "python-multipart>=0.0.32",
+    "python-multipart>=0.0.33",
     "redis>=5.3.1",
     "sqlalchemy[asyncio]>=2.1.6",
 ]
